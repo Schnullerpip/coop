@@ -17,23 +17,6 @@
 
 namespace coop{
 
-    namespace record {
-        struct record_info {
-            void init(const RecordDecl* class_struct, std::vector<const FieldDecl*> *field_vector){
-                record = class_struct;
-                fields = field_vector;
-                member_matrix_dimension = field_vector->size() * field_vector->size();
-                member_matrix = static_cast<float*>(calloc(member_matrix_dimension, sizeof(float)));
-            }
-            ~record_info(){
-                free(member_matrix);
-            }
-            float *member_matrix;
-            size_t member_matrix_dimension;
-            const RecordDecl *record;
-            std::vector<const FieldDecl*> *fields;
-        };
-    }
 
 
     namespace logger {
@@ -98,6 +81,60 @@ namespace coop{
         void out(Progress_Status status){
             out(log_stream, status);
         }
+    }
+
+    namespace record {
+        struct record_info {
+            void init(const RecordDecl* class_struct, std::vector<const FieldDecl*> *field_vector, std::map<const FunctionDecl*, std::vector<const MemberExpr*>> *relevant_funcs){
+                record = class_struct;
+                fields = field_vector;
+                mat_dim = field_vector->size() * relevant_funcs->size();
+                fun_mem_mat = static_cast<float*>(calloc(mat_dim, sizeof(float)));
+                relevant_functions = relevant_funcs;
+            }
+            ~record_info(){
+                free(fun_mem_mat);
+            }
+            float *fun_mem_mat; //the matrix mapping which function uses which member of the class 
+            /*the setup will be e.g.
+               m_a, m_b, m_c, m_d
+            f1  x    x        
+            f2  x         x
+            f3
+            f4            x    x
+            */
+            size_t mat_dim; //cached matrix dimension
+            const RecordDecl *record; //reference to the record node (class/struct) that is referred to by this struct
+            std::vector<const FieldDecl*> *fields; //reference to all the member nodes that the referred record has
+            std::map<const FunctionDecl*, std::vector<const MemberExpr*>> *relevant_functions;
+
+            float& at(int x, int y){
+                return fun_mem_mat[y * fields->size() + x];
+            }
+
+            void print_mat(){
+                logger::log_stream << "'" << record->getNameAsString().c_str() << "':\n";
+                int count = 0;
+                logger::log_stream << "\t";
+                for(auto f : *fields){
+                    logger::log_stream << " " << f->getNameAsString().c_str() << "\t";
+                }
+                logger::log_stream << "\n";
+                for(auto f : *relevant_functions){
+                    logger::log_stream << f.first->getNameAsString().c_str() << "\t[";
+                    for(size_t o = 0; o < fields->size(); ++o){
+                        logger::log_stream << at(o, count) << "\t";
+                        if(o == fields->size()-1){
+                            logger::log_stream << "]\n";
+                        }else{
+                            logger::log_stream << ",";
+                        }
+                    }
+                    count++;
+                }
+                logger::out();
+            }
+        };
     }
 
     template <typename T> class Printer : public MatchFinder::MatchCallback {

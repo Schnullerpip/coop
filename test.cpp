@@ -6,32 +6,18 @@ public:
 	short m_c[2];
 };
 
-class B : A {};
-
-union bleh {
-	int a;
-	char n;
-};
-
 class C {
+public:
 	int m_d;
-	void foo(int& a){
+	void foo(int& a, A& aa){
 		int bleo = 12 + a;
-		a += 1 + bleo - m_d;
-	}
-
-	void bar(int& a){
-		int bleo = 12 + a;
+		a += 1 + bleo;
+		aa.m_a = 0;
 	}
 };
 
-void foobar(A& a){
+void foobar(A& a, C& c){
+	c.m_d += 1;
 	a.m_a += (a.m_a += 1);
 	a.m_b += (a.m_b += 1);
 }
-
-void barfoo(){
-	int bleo = 2 + 4;
-}
-
-int d;

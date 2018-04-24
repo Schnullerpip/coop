@@ -98,19 +98,14 @@ int main(int argc, const char **argv) {
 
 	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
 		//creating record_info for each record
-		//TODO: dont forget to free!!!
+		//TODO: dont forget to delete!!!
 		coop::record::record_info *record_stats =
-			static_cast<coop::record::record_info*>
-				(malloc(sizeof(coop::record::record_info) * member_registration.class_fields_map.size()));
+			new coop::record::record_info[member_registration.class_fields_map.size()]();
 		
 		coop::logger::out("creating a member matrix", coop::logger::RUNNING)++;
 			//filling the info fields
-			int count = 0;
+			int rec_count = 0;
 			for(auto pair : member_registration.class_fields_map){
-
-				//initializing the info struct
-				coop::record::record_info* rec_i = &record_stats[count];
-				rec_i->init(pair.first, &pair.second);
 
 				log_stream << pair.first->getNameAsString().c_str();
 				coop::logger::out(log_stream)++;	
@@ -118,36 +113,41 @@ int main(int argc, const char **argv) {
 					coop::logger::out(mem->getNameAsString().c_str());
 				}
 				coop::logger::depth--;
+
+				rec_count++;
 			}
-
-
 
 		//now we know the classes (and their members) and the functions, that use those members
 		//now for each class we need to pick their member's inside the functions, to see which ones are related
-		count = 0;
+		rec_count = 0;
 		for(auto cfm : member_registration.class_fields_map){
 			const auto fields = &cfm.second;
+			const auto rec = cfm.first;
+			//initializing the info struct
+			record_stats[rec_count].init(rec, fields, &member_usage_callback.relevant_functions);
 			//iterate over each function
+			int func_count = 0;
 			for(auto func : member_usage_callback.relevant_functions){
 				//iterate over each member that function uses
 				int field_count = 0;
 				for(auto field : func.second){
-					coop::logger::log_stream << "checking: '" << cfm.first->getNameAsString().c_str() << "' has '" << field->getMemberDecl()->getNameAsString();
+					coop::logger::log_stream << "checking: '" << rec->getNameAsString().c_str() << "' has '" << field->getMemberDecl()->getNameAsString();
 					if(std::find(fields->begin(), fields->end(), static_cast<FieldDecl*>(field->getMemberDecl()))!=fields->end()){
 						coop::logger::log_stream << "' - yes";
-						record_stats[count].member_matrix[field_count]++;
+						record_stats[rec_count].at(field_count, func_count)++;
 					}else{
 						coop::logger::log_stream << "' - no";
 					}
-					coop::logger::out()++;
+					coop::logger::out();
+					field_count++;
 				}
+				func_count++;
 			}
+			record_stats[rec_count++].print_mat();
 		}
 		coop::logger::depth--;
-		coop::logger::out("creating a member matrix", coop::logger::DONE);
-
-	coop::logger::depth--;
-	coop::logger::out("determining which members are logically related", coop::logger::TODO);
+		coop::logger::out("creating a member matrix", coop::logger::DONE)--;
+	coop::logger::out("determining which members are logically related", coop::logger::DONE);
 
 	coop::logger::out("prioritizing pairings", coop::logger::RUNNING);
 	//TODO: prioritize pairings
@@ -156,6 +156,10 @@ int main(int argc, const char **argv) {
 	coop::logger::out("applying changes to AST ... ", coop::logger::RUNNING);
 	//TODO: apply measurements respectively, to make the target program more cachefriendly
 	coop::logger::out("applying changes to AST ... ", coop::logger::TODO);
+
+	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
+	delete[] record_stats;
+	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
 
 	return execution_state;
 }
