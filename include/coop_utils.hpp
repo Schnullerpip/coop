@@ -91,6 +91,12 @@ namespace coop{
                 mat_dim = field_vector->size() * relevant_funcs->size();
                 fun_mem_mat = static_cast<float*>(calloc(mat_dim, sizeof(float)));
                 relevant_functions = relevant_funcs;
+
+                //the fun_mem_mat will be written according to the indices the members are mapped to here
+                int index_count = 0;
+                for(auto f : *fields){
+                        member_idx_mapping[f] = index_count++;
+                }
             }
             ~record_info(){
                 free(fun_mem_mat);
@@ -107,6 +113,7 @@ namespace coop{
             const RecordDecl *record; //reference to the record node (class/struct) that is referred to by this struct
             std::vector<const FieldDecl*> *fields; //reference to all the member nodes that the referred record has
             std::map<const FunctionDecl*, std::vector<const MemberExpr*>> *relevant_functions;
+            std::map<const FieldDecl*, int> member_idx_mapping; //will associate each member with a consistent idx
 
             float& at(int x, int y){
                 return fun_mem_mat[y * fields->size() + x];

@@ -129,17 +129,23 @@ int main(int argc, const char **argv) {
 			int func_count = 0;
 			for(auto func : member_usage_callback.relevant_functions){
 				//iterate over each member that function uses
-				int field_count = 0;
-				for(auto field : func.second){
-					coop::logger::log_stream << "checking: '" << rec->getNameAsString().c_str() << "' has '" << field->getMemberDecl()->getNameAsString();
-					if(std::find(fields->begin(), fields->end(), static_cast<FieldDecl*>(field->getMemberDecl()))!=fields->end()){
+				for(auto mem : func.second){
+
+					coop::logger::log_stream << "checking: '" << rec->getNameAsString().c_str() <<
+						"' for func '" << func.first->getNameAsString().c_str() << "' has '" <<
+							mem->getMemberDecl()->getNameAsString();
+
+
+					const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
+					if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
 						coop::logger::log_stream << "' - yes";
-						record_stats[rec_count].at(field_count, func_count)++;
+						auto rec_stat = &record_stats[rec_count];
+						rec_stat->at(rec_stat->member_idx_mapping[child], func_count)++;
 					}else{
 						coop::logger::log_stream << "' - no";
 					}
 					coop::logger::out();
-					field_count++;
+					record_stats[rec_count].print_mat();
 				}
 				func_count++;
 			}

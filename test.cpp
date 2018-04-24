@@ -13,6 +13,7 @@ public:
 		int bleo = 12 + a;
 		a += 1 + bleo;
 		aa.m_a = 0;
+		a += m_d;
 	}
 };
 
