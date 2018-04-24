@@ -1,0 +1,4 @@
+#ifndef COOP_SYSTEMSTATEINFORMATION_HPP
+#define COOP_SYSTEMSTATEINFORMATION_HPP
+int execution_state = 0;
+#endif
