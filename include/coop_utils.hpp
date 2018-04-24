@@ -48,7 +48,7 @@ namespace coop{
         size_t depth = 0;
 
         /*outs message to out_stream*/
-        void out(const char* msg, const char* append = "\n"){
+        size_t& out(const char* msg, const char* append = "\n"){
             //getting the time
             time_t now = time(0);
             char* now_s = ctime(&now);
@@ -65,31 +65,34 @@ namespace coop{
             }
 
             out_stream << msg << append;
+            return depth;
         }
 
         /*outs message to out_stream*/
-        void out(std::stringstream& msg_stream, const char* append = "\n"){
-            out(msg_stream.str().c_str(), append);
+        size_t& out(std::stringstream& msg_stream, const char* append = "\n"){
+            std::string msg = msg_stream.str();
             msg_stream.str("");
             msg_stream.clear();
+            return out(msg.c_str(), append);
         }
 
-        void out(){
-            out(log_stream);
+        size_t& out(){
+            return out(log_stream);
         }
 
 
         /*outs message to out_stream informing the user of a progress*/
         enum Progress_Status {RUNNING, DONE, TODO};
-        void out(const char* msg, Progress_Status status){
-            out(msg, status == RUNNING ? " [running]\n" : status == DONE ? " [done]\n" : " [TODO!!!!!!!]\n");
+        size_t& out(const char* msg, Progress_Status status){
+            return out(msg, status == RUNNING ? " [running]\n" : status == DONE ? " [done]\n" : " [TODO!!!!!!!]\n");
         }
 
         /*outs message to out_stream informing the user of a progress*/
-        void out(std::stringstream& msg_stream, Progress_Status status){
-            out(msg_stream.str().c_str(), status);
+        size_t& out(std::stringstream& msg_stream, Progress_Status status){
+            std::string msg = msg_stream.str();
             msg_stream.str("");
             msg_stream.clear();
+            return out(msg.c_str(), status);
         }
 
         void out(Progress_Status status){
@@ -113,6 +116,8 @@ namespace coop{
     namespace match {
 		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(anyOf(isClass(), isStruct())))).bind(coop_member_s);
         DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);
+		StatementMatcher funcs_using_members =
+			memberExpr(hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
     }
 
     bool are_same_variable(const clang::ValueDecl *First, const clang::ValueDecl *Second) {
