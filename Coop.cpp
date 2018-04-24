@@ -102,7 +102,7 @@ int main(int argc, const char **argv) {
 		coop::record::record_info *record_stats =
 			new coop::record::record_info[member_registration.class_fields_map.size()]();
 		
-		coop::logger::out("creating a member matrix", coop::logger::RUNNING)++;
+		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
 			//filling the info fields
 			int rec_count = 0;
 			for(auto pair : member_registration.class_fields_map){
@@ -145,18 +145,20 @@ int main(int argc, const char **argv) {
 						coop::logger::log_stream << "' - no";
 					}
 					coop::logger::out();
-					record_stats[rec_count].print_mat();
 				}
 				func_count++;
 			}
 			record_stats[rec_count++].print_mat();
 		}
 		coop::logger::depth--;
-		coop::logger::out("creating a member matrix", coop::logger::DONE)--;
+		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
 	coop::logger::out("determining which members are logically related", coop::logger::DONE);
 
 	coop::logger::out("prioritizing pairings", coop::logger::RUNNING);
 	//TODO: prioritize pairings
+	//now that we have a matrix for each record, that tells us which of its members are used in which function
+	//we can take a heuristic and prioritize pairings
+	//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
 	coop::logger::out("prioritizing pairings", coop::logger::TODO);
 
 	coop::logger::out("applying changes to AST ... ", coop::logger::RUNNING);

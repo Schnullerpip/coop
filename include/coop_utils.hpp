@@ -93,6 +93,8 @@ namespace coop{
                 relevant_functions = relevant_funcs;
 
                 //the fun_mem_mat will be written according to the indices the members are mapped to here
+                //since a function can mention the same member several times, we need to make sure each
+                //iteration over the same member associates with the same adress in the matrix (has the same index)
                 int index_count = 0;
                 for(auto f : *fields){
                         member_idx_mapping[f] = index_count++;
