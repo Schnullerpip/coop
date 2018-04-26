@@ -6,6 +6,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Frontend/CompilerInstance.h"
 #include "clang/AST/ASTContext.h"
 
 using namespace clang::tooling;
@@ -37,45 +38,54 @@ static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 
 
 //matchcallback that registeres members of classes for later usage
-class MemberRegistrationCallback : public MatchFinder::MatchCallback {
+class MemberRegistrationCallback : public coop::CoopMatchCallback {
 public:
 	std::map<const RecordDecl*, std::vector<const FieldDecl*>> class_fields_map;
+
+	MemberRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
 private:
 	virtual void run(const MatchFinder::MatchResult &result){
 		//retreive
 		const RecordDecl* rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
-		//register the field
-		clang::RecordDecl::field_iterator fi;
-		coop::logger::depth++;
-		for(fi = rd->field_begin(); fi != rd->field_end(); fi++){
-			class_fields_map[rd].push_back(*fi);
-			coop::logger::log_stream << "added '" << fi->getNameAsString().c_str() << "' to record '" << rd->getNameAsString().c_str() << "'";
-			coop::logger::out();
+
+		SourceManager &srcMgr = result.Context->getSourceManager();
+		if(is_user_source_file(srcMgr.getFilename(rd->getLocation()).str().c_str())){
+			//register the field
+			clang::RecordDecl::field_iterator fi;
+			coop::logger::depth++;
+			for(fi = rd->field_begin(); fi != rd->field_end(); fi++){
+				class_fields_map[rd].push_back(*fi);
+				coop::logger::log_stream << "added '" << fi->getNameAsString().c_str() << "' to record '" << rd->getNameAsString().c_str() << "'";
+				coop::logger::out();
+			}
+			coop::logger::depth--;
 		}
-		coop::logger::depth--;
 	}
 };
 
 //will cache the functions, that are matched on for later usage
-class MemberUsageCallback : public MatchFinder::MatchCallback{
+class MemberUsageCallback : public coop::CoopMatchCallback{
 public:
 	//will hold all the functions, that use members and are therefore 'relevant' to us
 	std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
+	MemberUsageCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+
 private:
 	void run(const MatchFinder::MatchResult &result){
 		const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
 		const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
 
-		coop::logger::log_stream << "found function '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
-		coop::logger::out();
+		SourceManager &srcMgr = result.Context->getSourceManager();
+		if(is_user_source_file(srcMgr.getFilename(func->getLocation()).str().c_str())){
+			coop::logger::log_stream << "found function '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
+			coop::logger::out();
 
-		//cache the function node for later traversal
-		relevant_functions[func].push_back(memExpr);
+			//cache the function node for later traversal
+			relevant_functions[func].push_back(memExpr);
+		}
 	}
 };
-
-
 
 int main(int argc, const char **argv) {
 
@@ -84,12 +94,22 @@ int main(int argc, const char **argv) {
 		int execution_state;
 		std::stringstream& log_stream = coop::logger::log_stream;
 
+		//registering all the user specified files
+		std::vector<const char*> user_files;
+		for(int i = 1; i < argc; ++i){
+			if(!strcmp(argv[i], "--"))
+				break;
+			coop::logger::log_stream << "adding " << argv[i] << " to user source files";
+			coop::logger::out();
+			user_files.push_back(argv[i]);
+		}
+
 		CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 		MatchFinder data_aggregation;
 
-		MemberRegistrationCallback member_registration;
-		MemberUsageCallback member_usage_callback;
+		MemberRegistrationCallback member_registration(&user_files);
+		MemberUsageCallback member_usage_callback(&user_files);
 		data_aggregation.addMatcher(coop::match::classes, &member_registration);
 		data_aggregation.addMatcher(coop::match::funcs_using_members, &member_usage_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);

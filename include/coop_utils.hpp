@@ -159,6 +159,27 @@ namespace coop{
         }
     };
 
+    class CoopMatchCallback : public MatchFinder::MatchCallback {
+        public:
+            CoopMatchCallback(const std::vector<const char*> *user_source_files)
+                :user_source_files(user_source_files){}
+        protected:
+            bool is_user_source_file(const char* file_path){
+                const char* relevant_token;
+                for(relevant_token = file_path+strlen(file_path); *(relevant_token-1) != '/' && *(relevant_token-1) != '\\'; --relevant_token);
+                for(auto file : *user_source_files){
+                    if(strcmp(file, relevant_token)){
+                        return false;
+                    }
+                }
+                return true;
+            }
+        private:
+            const std::vector<const char*> *user_source_files;
+            virtual void run(const MatchFinder::MatchResult &result) = 0;
+
+    };
+
     namespace match {
 		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(anyOf(isClass(), isStruct())))).bind(coop_member_s);
         DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);

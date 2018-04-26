@@ -1,3 +1,5 @@
+#include <iostream>
+
 class A {
 public:
 	static int s_a;
@@ -21,4 +23,10 @@ void foobar(A& a, C& c){
 	c.m_d += 1;
 	a.m_a += (a.m_a += 1);
 	a.m_b += (a.m_b += 1);
+}
+
+
+int main(){
+	A a;
+	std::cout << a.m_a << std::endl;
 }
