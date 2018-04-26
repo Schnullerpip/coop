@@ -56,7 +56,7 @@ private:
 			coop::logger::depth++;
 			for(fi = rd->field_begin(); fi != rd->field_end(); fi++){
 				class_fields_map[rd].push_back(*fi);
-				coop::logger::log_stream << "added '" << fi->getNameAsString().c_str() << "' to record '" << rd->getNameAsString().c_str() << "'";
+				coop::logger::log_stream << "found '" << fi->getNameAsString().c_str() << "' in record '" << rd->getNameAsString().c_str() << "'";
 				coop::logger::out();
 			}
 			coop::logger::depth--;
@@ -72,17 +72,36 @@ public:
 	MemberUsageCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
 private:
-	void run(const MatchFinder::MatchResult &result){
+	void run(const MatchFinder::MatchResult &result) override {
 		const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
 		const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
 
 		SourceManager &srcMgr = result.Context->getSourceManager();
 		if(is_user_source_file(srcMgr.getFilename(func->getLocation()).str().c_str())){
-			coop::logger::log_stream << "found function '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
+			coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
 			coop::logger::out();
 
 			//cache the function node for later traversal
 			relevant_functions[func].push_back(memExpr);
+		}
+	}
+};
+
+class FunctionCallCountCallback : public coop::CoopMatchCallback {
+public:
+	std::map<const FunctionDecl*, int> function_number_calls;
+	FunctionCallCountCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+private:
+	void run(const MatchFinder::MatchResult &result){
+		if(const FunctionDecl *function_call = result.Nodes.getNodeAs<CallExpr>(coop_functionCall_s)->getDirectCallee()){
+
+			SourceManager &srcMgr = result.Context->getSourceManager();
+			if(is_user_source_file(srcMgr.getFilename(function_call->getLocation()).str().c_str())){
+				coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called";
+				coop::logger::out();
+
+				function_number_calls[function_call]++;
+			}
 		}
 	}
 };
@@ -110,8 +129,10 @@ int main(int argc, const char **argv) {
 
 		MemberRegistrationCallback member_registration(&user_files);
 		MemberUsageCallback member_usage_callback(&user_files);
+		FunctionCallCountCallback function_calls_callback(&user_files);
 		data_aggregation.addMatcher(coop::match::classes, &member_registration);
 		data_aggregation.addMatcher(coop::match::funcs_using_members, &member_usage_callback);
+		data_aggregation.addMatcher(coop::match::function_calls, &function_calls_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
 	coop::logger::out("determining which members/records there are", coop::logger::RUNNING)++;

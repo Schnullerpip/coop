@@ -1,5 +1,3 @@
-#include <iostream>
-
 class A {
 public:
 	static int s_a;
@@ -28,5 +26,6 @@ void foobar(A& a, C& c){
 
 int main(){
 	A a;
-	std::cout << a.m_a << std::endl;
+	C c;
+	foobar(a, c);
 }
