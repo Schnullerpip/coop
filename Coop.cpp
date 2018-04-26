@@ -36,7 +36,7 @@ static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 
 
 
-//matchcallback that registeres members of classes
+//matchcallback that registeres members of classes for later usage
 class MemberRegistrationCallback : public MatchFinder::MatchCallback {
 public:
 	std::map<const RecordDecl*, std::vector<const FieldDecl*>> class_fields_map;
@@ -57,8 +57,10 @@ private:
 	}
 };
 
+//will cache the functions, that are matched on for later usage
 class MemberUsageCallback : public MatchFinder::MatchCallback{
 public:
+	//will hold all the functions, that use members and are therefore 'relevant' to us
 	std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
 private:
 	void run(const MatchFinder::MatchResult &result){
@@ -79,7 +81,7 @@ int main(int argc, const char **argv) {
 
 	//setup
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING);
-		extern int execution_state;
+		int execution_state;
 		std::stringstream& log_stream = coop::logger::log_stream;
 
 		CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
@@ -98,7 +100,6 @@ int main(int argc, const char **argv) {
 
 	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
 		//creating record_info for each record
-		//TODO: dont forget to delete!!!
 		coop::record::record_info *record_stats =
 			new coop::record::record_info[member_registration.class_fields_map.size()]();
 		
@@ -131,18 +132,16 @@ int main(int argc, const char **argv) {
 				//iterate over each member that function uses
 				for(auto mem : func.second){
 
-					coop::logger::log_stream << "checking: '" << rec->getNameAsString().c_str() <<
-						"' for func '" << func.first->getNameAsString().c_str() << "' has '" <<
-							mem->getMemberDecl()->getNameAsString();
-
+					log_stream << "checking func '" << func.first->getNameAsString().c_str() << "'\thas member '"
+						<< mem->getMemberDecl()->getNameAsString() << "' for record '" << rec->getNameAsString().c_str();
 
 					const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 					if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
-						coop::logger::log_stream << "' - yes";
+						log_stream << "' - yes";
 						auto rec_stat = &record_stats[rec_count];
 						rec_stat->at(rec_stat->member_idx_mapping[child], func_count)++;
 					}else{
-						coop::logger::log_stream << "' - no";
+						log_stream << "' - no";
 					}
 					coop::logger::out();
 				}
@@ -154,12 +153,12 @@ int main(int argc, const char **argv) {
 		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
 	coop::logger::out("determining which members are logically related", coop::logger::DONE);
 
-	coop::logger::out("prioritizing pairings", coop::logger::RUNNING);
+	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::RUNNING);
 	//TODO: prioritize pairings
 	//now that we have a matrix for each record, that tells us which of its members are used in which function
 	//we can take a heuristic and prioritize pairings
 	//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
-	coop::logger::out("prioritizing pairings", coop::logger::TODO);
+	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
 
 	coop::logger::out("applying changes to AST ... ", coop::logger::RUNNING);
 	//TODO: apply measurements respectively, to make the target program more cachefriendly

@@ -162,8 +162,7 @@ namespace coop{
     namespace match {
 		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(anyOf(isClass(), isStruct())))).bind(coop_member_s);
         DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);
-		StatementMatcher funcs_using_members =
-			memberExpr(hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
+		StatementMatcher funcs_using_members = memberExpr(hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
     }
 
     bool are_same_variable(const clang::ValueDecl *First, const clang::ValueDecl *Second) {
