@@ -117,7 +117,7 @@ int main(int argc, const char **argv) {
 
 	//setup
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING);
-		int execution_state;
+		extern int execution_state;
 		std::stringstream& log_stream = coop::logger::log_stream;
 
 		//registering all the user specified files
