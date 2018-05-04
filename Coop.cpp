@@ -64,7 +64,10 @@ private:
 	}
 };
 
-//will cache the functions, that are matched on for later usage
+/*
+	will cache the functions and the members they use so a member_matrix can be made for each class telling us
+	how often which members are used inside which function
+*/
 class MemberUsageCallback : public coop::CoopMatchCallback{
 public:
 	//will hold all the functions, that use members and are therefore 'relevant' to us
@@ -78,7 +81,7 @@ private:
 
 		SourceManager &srcMgr = result.Context->getSourceManager();
 		if(is_user_source_file(srcMgr.getFilename(func->getLocation()).str().c_str())){
-			coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
+			coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "' inside a loop";
 			coop::logger::out();
 
 			//cache the function node for later traversal
@@ -87,6 +90,10 @@ private:
 	}
 };
 
+/*
+	will match on all function calls, that are made inside a loop, so they can later be checked
+	against wether or not they use members and therefore those members' datalayout should be optimized
+*/
 class FunctionCallCountCallback : public coop::CoopMatchCallback {
 public:
 	std::map<const FunctionDecl*, int> function_number_calls;
@@ -97,7 +104,7 @@ private:
 
 			SourceManager &srcMgr = result.Context->getSourceManager();
 			if(is_user_source_file(srcMgr.getFilename(function_call->getLocation()).str().c_str())){
-				coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called";
+				coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called inside a loop";
 				coop::logger::out();
 
 				function_number_calls[function_call]++;
@@ -131,7 +138,7 @@ int main(int argc, const char **argv) {
 		MemberUsageCallback member_usage_callback(&user_files);
 		FunctionCallCountCallback function_calls_callback(&user_files);
 		data_aggregation.addMatcher(coop::match::classes, &member_registration);
-		data_aggregation.addMatcher(coop::match::funcs_using_members, &member_usage_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
 		data_aggregation.addMatcher(coop::match::function_calls, &function_calls_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
