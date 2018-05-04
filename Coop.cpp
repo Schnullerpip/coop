@@ -203,7 +203,7 @@ int main(int argc, const char **argv) {
 
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::RUNNING);
 	//TODO: prioritize pairings
-	//now that we have a matrix for each record, that tells us which of its members are used in which function
+	//now that we have a matrix for each record, that tells us which of its members are used in which function how many times,
 	//we can take a heuristic and prioritize pairings
 	//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);

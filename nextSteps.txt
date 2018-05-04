@@ -1,0 +1,11 @@
+1. cache all loop usages, that associate members
+2. cache all loop usages, that associate function-calls (later reduce to those using members)
+3. create loop_member matrices for each record
+	|_dereference each loop and count members (inner-outer loops will be shown seperately)
+	|_dereference loop_functioncalls (step 2.) using the already made member_matrices and add to the count
+	|_check each loop against each other one and find nested loops -> increase member count of nested loops by some factor
+
+4. now we have each 'loop using member x how many times' considering nested loops
+5. favorable pairings are already encoded in the loop_member matrix -> possible related members appear in same loop
+	|_possible conflicts A&B; B&C; but A !& C -> any good solution?
+6. apply changes
