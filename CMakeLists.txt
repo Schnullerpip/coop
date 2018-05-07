@@ -1,7 +1,7 @@
 set(LLVM_LINK_COMPONENTS support)
 
 
-add_clang_executable(coop Coop.cpp SystemStateInformation.hpp)
+add_clang_executable(coop Coop.cpp)
 
 target_include_directories(coop PUBLIC include) 
 

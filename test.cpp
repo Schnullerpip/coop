@@ -17,10 +17,11 @@ public:
 	}
 };
 
-void foobar(A& a, C& c){
+void foob(A& a, C& c){
 	for(;;){
 		c.m_d += 1;
 		c.foo(c.m_d, a);
+		a.m_a++;
 	}
 	a.m_a += (a.m_a += 1);
 	a.m_b += (a.m_b += 1);
@@ -30,7 +31,7 @@ void foobar(A& a, C& c){
 int main(){
 	A a;
 	C c;
-	foobar(a, c);
+	foob(a, c);
 	int bleh = 0;
 	c.foo(bleh, a);
 }

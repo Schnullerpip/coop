@@ -21,6 +21,9 @@ using namespace clang::ast_matchers;
 //custom needed
 #include "clang/AST/DeclCXX.h"
 
+std::map<const clang::Stmt*, std::vector<const clang::MemberExpr*>>
+coop::LoopRegistrationCallback::loop_members_map = {};
+
 
 
 // -------------- GENERAL STUFF ----------------------------------------------------------
@@ -35,83 +38,6 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 // -------------- GENERAL STUFF ----------------------------------------------------------
 
-
-
-//matchcallback that registeres members of classes for later usage
-class MemberRegistrationCallback : public coop::CoopMatchCallback {
-public:
-	std::map<const RecordDecl*, std::vector<const FieldDecl*>> class_fields_map;
-
-	MemberRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
-
-private:
-	virtual void run(const MatchFinder::MatchResult &result){
-		//retreive
-		const RecordDecl* rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
-
-		SourceManager &srcMgr = result.Context->getSourceManager();
-		if(is_user_source_file(srcMgr.getFilename(rd->getLocation()).str().c_str())){
-			//register the field
-			clang::RecordDecl::field_iterator fi;
-			coop::logger::depth++;
-			for(fi = rd->field_begin(); fi != rd->field_end(); fi++){
-				class_fields_map[rd].push_back(*fi);
-				coop::logger::log_stream << "found '" << fi->getNameAsString().c_str() << "' in record '" << rd->getNameAsString().c_str() << "'";
-				coop::logger::out();
-			}
-			coop::logger::depth--;
-		}
-	}
-};
-
-/*
-	will cache the functions and the members they use so a member_matrix can be made for each class telling us
-	how often which members are used inside which function
-*/
-class MemberUsageCallback : public coop::CoopMatchCallback{
-public:
-	//will hold all the functions, that use members and are therefore 'relevant' to us
-	std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
-	MemberUsageCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
-
-private:
-	void run(const MatchFinder::MatchResult &result) override {
-		const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
-		const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
-
-		SourceManager &srcMgr = result.Context->getSourceManager();
-		if(is_user_source_file(srcMgr.getFilename(func->getLocation()).str().c_str())){
-			coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "' inside a loop";
-			coop::logger::out();
-
-			//cache the function node for later traversal
-			relevant_functions[func].push_back(memExpr);
-		}
-	}
-};
-
-/*
-	will match on all function calls, that are made inside a loop, so they can later be checked
-	against wether or not they use members and therefore those members' datalayout should be optimized
-*/
-class FunctionCallCountCallback : public coop::CoopMatchCallback {
-public:
-	std::map<const FunctionDecl*, int> function_number_calls;
-	FunctionCallCountCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
-private:
-	void run(const MatchFinder::MatchResult &result){
-		if(const FunctionDecl *function_call = result.Nodes.getNodeAs<CallExpr>(coop_functionCall_s)->getDirectCallee()){
-
-			SourceManager &srcMgr = result.Context->getSourceManager();
-			if(is_user_source_file(srcMgr.getFilename(function_call->getLocation()).str().c_str())){
-				coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called inside a loop";
-				coop::logger::out();
-
-				function_number_calls[function_call]++;
-			}
-		}
-	}
-};
 
 int main(int argc, const char **argv) {
 
@@ -134,17 +60,23 @@ int main(int argc, const char **argv) {
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 		MatchFinder data_aggregation;
 
-		MemberRegistrationCallback member_registration(&user_files);
-		MemberUsageCallback member_usage_callback(&user_files);
-		FunctionCallCountCallback function_calls_callback(&user_files);
-		data_aggregation.addMatcher(coop::match::classes, &member_registration);
+		coop::MemberRegistrationCallback member_registration(&user_files);
+		coop::MemberUsageCallback member_usage_callback(&user_files);
+		coop::FunctionCallCountCallback function_calls_callback(&user_files);
+		coop::LoopRegistrationCallback for_loop_registration_callback(&user_files);
+		coop::LoopRegistrationCallback while_loop_registration_callback(&user_files);
+
+		data_aggregation.addMatcher(coop::match::members, &member_registration);
 		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
 		data_aggregation.addMatcher(coop::match::function_calls, &function_calls_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_registration_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_registration_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
-	coop::logger::out("determining which members/records there are", coop::logger::RUNNING)++;
+	coop::logger::out("data aggregation (applying matchers and callback routines)", coop::logger::RUNNING)++;
 		execution_state = Tool.run(newFrontendActionFactory(&data_aggregation).get());
-	coop::logger::out("determining which members/records there are", coop::logger::DONE)--;
+		coop::logger::depth--;
+	coop::logger::out("data aggregation (applying matchers and callback routines)", coop::logger::DONE);
 
 	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
 		//creating record_info for each record
@@ -173,32 +105,69 @@ int main(int argc, const char **argv) {
 			const auto fields = &cfm.second;
 			const auto rec = cfm.first;
 			//initializing the info struct
-			record_stats[rec_count].init(rec, fields, &member_usage_callback.relevant_functions);
-			//iterate over each function
-			int func_count = 0;
-			for(auto func : member_usage_callback.relevant_functions){
-				//iterate over each member that function uses
-				for(auto mem : func.second){
+			record_stats[rec_count].init(rec, fields,
+				&member_usage_callback.relevant_functions,
+				&coop::LoopRegistrationCallback::loop_members_map);
+			//iterate over each function to fill the function-member matrix of this record_info
+			{
+				int func_count = 0;
+				for(auto func : member_usage_callback.relevant_functions){
+					//iterate over each member that function uses
+					for(auto mem : func.second){
 
-					log_stream << "checking func '" << func.first->getNameAsString().c_str() << "'\thas member '"
-						<< mem->getMemberDecl()->getNameAsString() << "' for record '" << rec->getNameAsString().c_str();
+						log_stream << "checking func '" << func.first->getNameAsString().c_str() << "'\thas member '"
+							<< mem->getMemberDecl()->getNameAsString() << "' for record '" << rec->getNameAsString().c_str();
 
-					const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
-					if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
-						log_stream << "' - yes";
-						auto rec_stat = &record_stats[rec_count];
-						rec_stat->at(rec_stat->member_idx_mapping[child], func_count)++;
-					}else{
-						log_stream << "' - no";
+						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
+						if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
+							log_stream << "' - yes";
+							auto rec_stat = &record_stats[rec_count];
+							rec_stat->fun_mem.at(rec_stat->member_idx_mapping[child], func_count)++;
+						}else{
+							log_stream << "' - no";
+						}
+						coop::logger::out();
 					}
-					coop::logger::out();
+					func_count++;
 				}
-				func_count++;
+                coop::logger::log_stream << "record '" << record_stats[rec_count].record->getNameAsString().c_str() << "'s [FUNCTION/MEMBER] matrix:";
+				coop::logger::out();
+				coop::logger::depth++;
+				record_stats[rec_count].print_func_mem_mat();
+				coop::logger::depth--;
 			}
-			record_stats[rec_count++].print_mat();
+			//iterate over each loop to fill the loop-member matrix of this record_info
+			{
+				int loop_count = 0;
+				for(auto loop : for_loop_registration_callback.loop_members_map){
+					//iterate over each member that function uses
+					for(auto mem : loop.second){
+
+						log_stream << "checking loop has member '"
+							<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec->getNameAsString().c_str();
+
+						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
+						if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
+							log_stream << "' - yes";
+							auto rec_stat = &record_stats[rec_count];
+							rec_stat->loop_mem.at(rec_stat->member_idx_mapping[child], loop_count)++;
+						}else{
+							log_stream << "' - no";
+						}
+						coop::logger::out();
+					}
+					loop_count++;
+				}
+                coop::logger::log_stream << "record '" << record_stats[rec_count].record->getNameAsString().c_str() << "'s [LOOP/MEMBER] matrix:";
+				coop::logger::out();
+				coop::logger::depth++;
+				record_stats[rec_count++].print_loop_mem_mat();
+				coop::logger::depth--;
+			}
 		}
 		coop::logger::depth--;
 		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
+
 	coop::logger::out("determining which members are logically related", coop::logger::DONE);
 
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::RUNNING);
