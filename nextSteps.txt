@@ -1,7 +1,7 @@
-1. cache all loop usages, that associate members
+1. cache all loop usages, that associate members [DONE]
 2. cache all loop usages, that associate function-calls (later reduce to those using members)
 3. create loop_member matrices for each record
-	|_dereference each loop and count members (inner-outer loops will be shown seperately)
+	|_dereference each loop and count members (inner-outer loops will be shown separately)
 	|_dereference loop_functioncalls (step 2.) using the already made member_matrices and add to the count
 	|_check each loop against each other one and find nested loops -> increase member count of nested loops by some factor
 

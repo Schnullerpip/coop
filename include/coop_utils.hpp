@@ -13,7 +13,7 @@
 #define coop_class_s "class"
 #define coop_member_s "member"
 #define coop_function_s "function"
-#define coop_functionCall_s "functionCall"
+#define coop_function_call_s "functionCall"
 #define coop_loop_s "loop"
 
 
@@ -216,11 +216,12 @@ namespace coop{
     };
 
     namespace match {
-		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
         DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);
+		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
 		StatementMatcher members_used_in_functions = memberExpr(hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
-        StatementMatcher loops = anyOf(forStmt(), whileStmt());
-        StatementMatcher function_calls = callExpr(hasAncestor(loops)).bind(coop_functionCall_s);
+
+        StatementMatcher loops = anyOf(forStmt().bind(coop_loop_s), whileStmt().bind(coop_loop_s));
+        StatementMatcher function_calls_in_loops = callExpr(hasAncestor(loops)).bind(coop_function_call_s);
 
         StatementMatcher members_used_in_for_loops =
             memberExpr(hasAncestor(forStmt().bind(coop_loop_s))).bind(coop_member_s);
@@ -233,15 +234,15 @@ namespace coop{
             CoopMatchCallback(const std::vector<const char*> *user_source_files)
                 :user_source_files(user_source_files){}
         protected:
-            bool is_user_source_file(const char* file_path){
+            const char* is_user_source_file(const char* file_path){
                 const char* relevant_token;
                 for(relevant_token = file_path+strlen(file_path); *(relevant_token-1) != '/' && *(relevant_token-1) != '\\'; --relevant_token);
                 for(auto file : *user_source_files){
                     if(strcmp(file, relevant_token)){
-                        return false;
+                        return nullptr;
                     }
                 }
-                return true;
+                return relevant_token;
             }
         private:
             const std::vector<const char*> *user_source_files;
@@ -289,11 +290,11 @@ namespace coop{
         will cache the functions and the members they use so a member_matrix can be made for each class telling us
         how often which members are used inside which function
     */
-    class MemberUsageCallback : public coop::CoopMatchCallback{
+    class MemberUsageInFunctionsCallback : public coop::CoopMatchCallback{
     public:
         //will hold all the functions, that use members and are therefore 'relevant' to us
         std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
-        MemberUsageCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+        MemberUsageInFunctionsCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
     private:
         void run(const MatchFinder::MatchResult &result) override {
@@ -315,22 +316,47 @@ namespace coop{
         will match on all function calls, that are made inside a loop, so they can later be checked
         against wether or not they use members and therefore those members' datalayout should be optimized
     */
-    class FunctionCallCountCallback : public coop::CoopMatchCallback {
+    class LoopFunctionsCallback : public coop::CoopMatchCallback {
     public:
-        std::map<const FunctionDecl*, int> function_number_calls;
-        FunctionCallCountCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+        std::map<const Stmt*, const FunctionDecl*> loop_function_calls;
+        LoopFunctionsCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
     private:
         void run(const MatchFinder::MatchResult &result){
-            if(const FunctionDecl *function_call = result.Nodes.getNodeAs<CallExpr>(coop_functionCall_s)->getDirectCallee()){
+            SourceManager &srcMgr = result.Context->getSourceManager();
 
-                SourceManager &srcMgr = result.Context->getSourceManager();
-                if(is_user_source_file(srcMgr.getFilename(function_call->getLocation()).str().c_str())){
-                    coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called inside a loop";
-                    coop::logger::out();
-
-                    function_number_calls[function_call]++;
+            const FunctionDecl *function_call = result.Nodes.getNodeAs<CallExpr>(coop_function_call_s)->getDirectCallee();
+            if(function_call){
+                if(!is_user_source_file(srcMgr.getFilename(function_call->getLocation()).str().c_str())){
+                    return;
                 }
+            }else{
+                return;
             }
+
+            coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called in a " ;
+
+            Stmt const *loop;
+            char const *fileName;
+            if(const ForStmt* forLoop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
+                loop = forLoop;
+                fileName = is_user_source_file(srcMgr.getFilename(forLoop->getForLoc()).str().c_str());
+                coop::logger::log_stream << "for";
+            }else if(const WhileStmt* whileLoop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
+                loop = whileLoop;
+                fileName = is_user_source_file(srcMgr.getFilename(whileLoop->getWhileLoc()).str().c_str());
+                coop::logger::log_stream << "while";
+            }
+
+            //check if the loop occurs in a user file
+            if(!fileName){
+                return;
+            }
+
+            coop::logger::log_stream << "Loop [" <<
+                fileName << " @Line " << srcMgr.getPresumedLineNumber(loop->getLocStart()) << "]";
+            coop::logger::out();
+            
+            loop_function_calls[loop] = function_call;
         }
     };
 

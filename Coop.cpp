@@ -60,15 +60,15 @@ int main(int argc, const char **argv) {
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 		MatchFinder data_aggregation;
 
-		coop::MemberRegistrationCallback member_registration(&user_files);
-		coop::MemberUsageCallback member_usage_callback(&user_files);
-		coop::FunctionCallCountCallback function_calls_callback(&user_files);
+		coop::MemberRegistrationCallback member_registration_callback(&user_files);
+		coop::MemberUsageInFunctionsCallback member_usage_callback(&user_files);
+		coop::LoopFunctionsCallback loop_functions_callback(&user_files);
 		coop::LoopRegistrationCallback for_loop_registration_callback(&user_files);
 		coop::LoopRegistrationCallback while_loop_registration_callback(&user_files);
 
-		data_aggregation.addMatcher(coop::match::members, &member_registration);
+		data_aggregation.addMatcher(coop::match::members, &member_registration_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
-		data_aggregation.addMatcher(coop::match::function_calls, &function_calls_callback);
+		data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_registration_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_registration_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
@@ -81,15 +81,14 @@ int main(int argc, const char **argv) {
 	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
 		//creating record_info for each record
 		coop::record::record_info *record_stats =
-			new coop::record::record_info[member_registration.class_fields_map.size()]();
+			new coop::record::record_info[member_registration_callback.class_fields_map.size()]();
 		
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
-			//filling the info fields
+			//print out the found records (classes/structs) and their fields
 			int rec_count = 0;
-			for(auto pair : member_registration.class_fields_map){
+			for(auto pair : member_registration_callback.class_fields_map){
 
-				log_stream << pair.first->getNameAsString().c_str();
-				coop::logger::out(log_stream)++;	
+				coop::logger::out(pair.first->getNameAsString().c_str())++;	
 				for(auto mem : pair.second){
 					coop::logger::out(mem->getNameAsString().c_str());
 				}
@@ -98,10 +97,11 @@ int main(int argc, const char **argv) {
 				rec_count++;
 			}
 
-		//now we know the classes (and their members) and the functions, that use those members
-		//now for each class we need to pick their member's inside the functions, to see which ones are related
+		/*now we know the classes (and their members) and the functions, that use those members and
+		also all the loops that use them
+		now for each class we need to pick their members inside the functions, to see which ones are related*/
 		rec_count = 0;
-		for(auto cfm : member_registration.class_fields_map){
+		for(auto cfm : member_registration_callback.class_fields_map){
 			const auto fields = &cfm.second;
 			const auto rec = cfm.first;
 			//initializing the info struct
