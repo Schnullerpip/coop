@@ -73,39 +73,62 @@ int main(int argc, const char **argv) {
 		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_registration_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
-	coop::logger::out("data aggregation (applying matchers and callback routines)", coop::logger::RUNNING)++;
+	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
+
+		//run the matchers/callbacks
 		execution_state = Tool.run(newFrontendActionFactory(&data_aggregation).get());
+
+		//print out the found records (classes/structs) and their fields
+		member_registration_callback.printData();
 		coop::logger::depth--;
-	coop::logger::out("data aggregation (applying matchers and callback routines)", coop::logger::DONE);
+	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::DONE);
 
 	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
 		//creating record_info for each record
 		coop::record::record_info *record_stats =
 			new coop::record::record_info[member_registration_callback.class_fields_map.size()]();
-		
+
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
-			//print out the found records (classes/structs) and their fields
-			int rec_count = 0;
-			for(auto pair : member_registration_callback.class_fields_map){
+		//the loop_registration_callback contain all the loops that directly associate members
+		//loop_functions_callback contains all the loops, that call functions and therefore might indirectly associate members
+		//find out which loop_functions_callback's functions are missing and extend the loop_registration
 
-				coop::logger::out(pair.first->getNameAsString().c_str())++;	
-				for(auto mem : pair.second){
-					coop::logger::out(mem->getNameAsString().c_str());
+		//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
+		//get rid of those entries
+		for(auto fc : loop_functions_callback.loop_function_calls){
+			bool remove = true;
+			//for each function in that loop, check wether it is a relevant function
+			for(auto f : fc.second.funcs){
+				auto iter = member_usage_callback.relevant_functions.find(f);
+				if(iter != member_usage_callback.relevant_functions.end()){
+					//this function is relevant to us and therefore validates the loop to be relevant
+					remove = false;
+					break;
 				}
-				coop::logger::depth--;
-
-				rec_count++;
 			}
+			if(remove){
+				loop_functions_callback.loop_function_calls.erase(fc.first);
+			}else {
+				//since this loop is relevant to us - check wether it is registered yet
+				//if it doesnt directly associate members it wont be registered yet
+				auto iter = coop::LoopRegistrationCallback::loop_members_map.find(fc.first);
+				if(iter == coop::LoopRegistrationCallback::loop_members_map.end()){
+					//the relevant loop is NOT registered yet -> register it, by adding it to the list
+					coop::LoopRegistrationCallback::loop_members_map[fc.first];
+				}
+			}
+		}
 
 		/*now we know the classes (and their members) and the functions, that use those members and
 		also all the loops that use them
 		now for each class we need to pick their members inside the functions, to see which ones are related*/
-		rec_count = 0;
+		int rec_count = 0;
 		for(auto cfm : member_registration_callback.class_fields_map){
 			const auto fields = &cfm.second;
 			const auto rec = cfm.first;
+			coop::record::record_info &rec_ref = record_stats[rec_count];
 			//initializing the info struct
-			record_stats[rec_count].init(rec, fields,
+			rec_ref.init(rec, fields,
 				&member_usage_callback.relevant_functions,
 				&coop::LoopRegistrationCallback::loop_members_map);
 			//iterate over each function to fill the function-member matrix of this record_info
@@ -121,8 +144,7 @@ int main(int argc, const char **argv) {
 						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 						if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
 							log_stream << "' - yes";
-							auto rec_stat = &record_stats[rec_count];
-							rec_stat->fun_mem.at(rec_stat->member_idx_mapping[child], func_count)++;
+							rec_ref.fun_mem.at(rec_ref.member_idx_mapping[child], func_count)++;
 						}else{
 							log_stream << "' - no";
 						}
@@ -139,9 +161,10 @@ int main(int argc, const char **argv) {
 			//iterate over each loop to fill the loop-member matrix of this record_info
 			{
 				int loop_count = 0;
-				for(auto loop : for_loop_registration_callback.loop_members_map){
-					//iterate over each member that function uses
-					for(auto mem : loop.second){
+				auto loop_mems_map = &coop::LoopRegistrationCallback::loop_members_map;
+				for(auto loop_mems : *loop_mems_map){
+					//iterate over each member that loop uses
+					for(auto mem : loop_mems.second){
 
 						log_stream << "checking loop has member '"
 							<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec->getNameAsString().c_str();
@@ -149,19 +172,56 @@ int main(int argc, const char **argv) {
 						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 						if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
 							log_stream << "' - yes";
-							auto rec_stat = &record_stats[rec_count];
-							rec_stat->loop_mem.at(rec_stat->member_idx_mapping[child], loop_count)++;
+							rec_ref.loop_mem.at(rec_ref.member_idx_mapping[child], loop_count)++;
 						}else{
 							log_stream << "' - no";
 						}
 						coop::logger::out();
 					}
+
+					/*now watch out! there can be direct member usage in a loop either by manual usage or by inlined functions
+					  BUT there can also be implicit member usage in a loop by calling a function, that uses a member
+					  so we also need to consider all the functions, that are being called in a loop, and check, wether or
+					  not they use relevant members*/
+					coop::logger::depth++;
+					//iterate over all functions that are called inside this loops, if there are any
+					auto funcsIter = loop_functions_callback.loop_function_calls.find(loop_mems.first);
+					if( funcsIter != loop_functions_callback.loop_function_calls.end()){
+						auto loop_info = funcsIter->second;
+						//the loop has functioncalls - are the functioncalls relevant to us?
+						for(auto func : loop_info.funcs){
+							coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "' loop calls";
+							coop::logger::out()++;
+							//if the function declaration contains a relevant member it must be considered
+							if(std::vector<const MemberExpr*> *mems = rec_ref.isRelevantFunction(func)){
+								//the function is relevant -> iterate over its memberExpr and
+								//update the loop_member matrix accordingly
+								for(auto mem : *mems){
+									//but a function can reference members of different records, so make sure to
+									//only update the ones, that are relevant to us
+									int mem_idx = rec_ref.isRelevantField(mem);
+									if(mem_idx > -1){ //means field is indexed by this record -> we have a match!
+										//the field belongs to this record -> go update the matrix!
+										coop::logger::log_stream << "found '" << func->getNameAsString().c_str() << "' using '" 
+											<< mem->getMemberDecl()->getNameAsString().c_str() << "' inside the loop " <<
+												loop_info.identifier;
+										coop::logger::out();
+
+										rec_ref.loop_mem.at(mem_idx, loop_count)++;
+									}
+								}
+							}
+							coop::logger::depth--;
+						}
+					}
+					coop::logger::depth--;
+
 					loop_count++;
 				}
                 coop::logger::log_stream << "record '" << record_stats[rec_count].record->getNameAsString().c_str() << "'s [LOOP/MEMBER] matrix:";
 				coop::logger::out();
 				coop::logger::depth++;
-				record_stats[rec_count++].print_loop_mem_mat();
+				record_stats[rec_count++].print_loop_mem_mat(&loop_functions_callback);
 				coop::logger::depth--;
 			}
 		}
@@ -177,9 +237,15 @@ int main(int argc, const char **argv) {
 	//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
 
-	coop::logger::out("applying changes to AST ... ", coop::logger::RUNNING);
+	coop::logger::out("applying changes to AST", coop::logger::RUNNING);
 	//TODO: apply measurements respectively, to make the target program more cachefriendly
-	coop::logger::out("applying changes to AST ... ", coop::logger::TODO);
+	coop::logger::out("applying changes to AST", coop::logger::TODO);
+
+	coop::logger::out("creating Intermediate Representation (IR)", coop::logger::RUNNING);
+	coop::logger::out("creating Intermediate Representation (IR)", coop::logger::TODO);
+
+	coop::logger::out("creating executable", coop::logger::RUNNING);
+	coop::logger::out("creating executable", coop::logger::TODO);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
 	delete[] record_stats;

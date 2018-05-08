@@ -15,16 +15,25 @@ public:
 		aa.m_a = 0;
 		a += m_d;
 	}
+	void bar(A& a);
 };
+
+void C::bar(A& a){
+	a.m_a = 0;
+	a.m_c[0] = 10;
+	C c;
+}
 
 void foob(A& a, C& c){
 	for(;;){
 		c.m_d += 1;
 		c.foo(c.m_d, a);
-		a.m_a++;
 	}
 	a.m_a += (a.m_a += 1);
 	a.m_b += (a.m_b += 1);
+	while(true){
+		foob(a, c);
+	}
 }
 
 

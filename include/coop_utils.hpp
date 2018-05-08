@@ -30,6 +30,11 @@ namespace coop{
         //configurable depth (out message indentation)
         size_t depth = 0;
 
+        void clear(std::stringstream& msg_stream = log_stream){
+            msg_stream.str("");
+            msg_stream.clear();
+        }
+
         /*outs message to out_stream*/
         size_t& out(const char* msg, const char* append = "\n"){
             //getting the time
@@ -54,8 +59,7 @@ namespace coop{
         /*outs message to out_stream*/
         size_t& out(std::stringstream& msg_stream, const char* append = "\n"){
             std::string msg = msg_stream.str();
-            msg_stream.str("");
-            msg_stream.clear();
+            clear(msg_stream);
             return out(msg.c_str(), append);
         }
 
@@ -82,138 +86,6 @@ namespace coop{
             out(log_stream, status);
         }
     }
-
-    template <class T>
-    struct data_matrix {
-        //the matrix mapping which T uses which P 
-        /*the setup will be e.g.
-            m_a, m_b, m_c, m_d
-        f1  x    x        
-        f2  x         x
-        f3
-        f4            x    x
-        */
-        float *mat;
-        //the matrix's dimension
-        size_t dim;
-        //the reference to the relevant instances referring to this matrix
-        std::map<const T*, std::vector<const MemberExpr*>> *relevant_instances;
-    private:
-        size_t fields;
-
-
-    public:
-        void init(size_t num_fields, std::map<const T*, std::vector<const MemberExpr*>> *ref){
-            fields = num_fields;
-            dim = fields * ref->size();
-            mat = static_cast<float*>(calloc(dim, sizeof(float)));
-            relevant_instances = ref;
-        }
-
-        float& at(int x, int y){
-            return mat[y * fields + x];
-        }
-    };
-
-    namespace record {
-        struct record_info {
-            void init(
-                const clang::RecordDecl* class_struct,
-                std::vector<const clang::FieldDecl*> *field_vector,
-                std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
-                std::map<const Stmt*, std::vector<const MemberExpr*>> *rlvnt_loops)
-                {
-
-                record = class_struct;
-                fields = field_vector;
-
-                fun_mem.init(fields->size(), rlvnt_funcs);
-                loop_mem.init(fields->size(), rlvnt_loops);
-
-                relevant_functions = rlvnt_funcs;
-                relevant_loops = rlvnt_loops;
-
-                //the fun_mem_mat will be written according to the indices the members are mapped to here
-                //since a function can mention the same member several times, we need to make sure each
-                //iteration over the same member associates with the same adress in the matrix (has the same index)
-                int index_count = 0;
-                for(auto f : *fields){
-                        member_idx_mapping[f] = index_count++;
-                }
-            }
-            ~record_info(){
-                free(fun_mem.mat);
-                free(loop_mem.mat);
-            }
-
-
-            //reference to the record node (class/struct) that is referred to by this struct
-            const clang::RecordDecl *record;
-            //reference to all the member nodes that the referred record has
-            std::vector<const clang::FieldDecl*> *fields;
-
-            //reference to the function-member mapping
-            std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>>
-                *relevant_functions;
-            //reference to the loop-member mapping
-            std::map<const clang::Stmt*, std::vector<const clang::MemberExpr*>>
-                *relevant_loops;
-
-            //the matrix mapping which function uses which member of the class
-            data_matrix<clang::FunctionDecl> fun_mem;
-            //the matrix mapping which loop uses which member of the class
-            data_matrix<clang::Stmt> loop_mem;
-
-            //will associate each member with a consistent index
-            std::map<const clang::FieldDecl*, int> member_idx_mapping;
-
-            void print_func_mem_mat(){
-                std::function<const char* (const FunctionDecl*)> getNam = [](const FunctionDecl* fd){ return fd->getNameAsString().c_str();};
-                print_mat(&fun_mem, getNam);
-            }
-            void print_loop_mem_mat(){
-                std::function<const char* (const Stmt*)> getNam = [](const Stmt* fd){ return "loop";};
-                print_mat(&loop_mem, getNam);
-            }
-
-        private:
-            template<typename T>
-            void print_mat (data_matrix<T>* mat, std::function<const char* (const T*)>& getName){
-                int count = 0;
-                logger::log_stream << "\t";
-                for(auto f : *fields){
-                    logger::log_stream << " " << f->getNameAsString().c_str() << "\t";
-                }
-                logger::out();
-                for(auto t : *mat->relevant_instances){
-                    logger::log_stream << getName(t.first) << "\t[";
-                    for(size_t o = 0; o < fields->size(); ++o){
-                        logger::log_stream << mat->at(o, count) << "\t";
-                        if(o == fields->size()-1){
-                            logger::log_stream << "]";
-                            logger::out();
-                        }else{
-                            logger::log_stream << ",";
-                        }
-                    }
-                    count++;
-                }
-            }
-        };
-    }
-
-    template <typename T> class Printer : public MatchFinder::MatchCallback {
-        const char* m_binder;
-        std::stringstream ss;
-    public:
-        explicit inline Printer(const char* binder):m_binder(binder){}
-
-        virtual void run(const MatchFinder::MatchResult &Result){
-            const T* p = Result.Nodes.getNodeAs<T>(m_binder);
-                ss << "found " << p->getNameAsString().c_str();
-                coop::logger::out(ss);
-        }
-    };
 
     namespace match {
         DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);
@@ -256,6 +128,16 @@ namespace coop{
         std::map<const RecordDecl*, std::vector<const FieldDecl*>> class_fields_map;
 
         MemberRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+
+        void printData(){
+            for(auto pair : class_fields_map){
+                coop::logger::out(pair.first->getNameAsString().c_str())++;	
+                for(auto mem : pair.second){
+                    coop::logger::out(mem->getNameAsString().c_str());
+                }
+                coop::logger::depth--;
+            }
+        }
 
     private:
         virtual void run(const MatchFinder::MatchResult &result){
@@ -316,10 +198,27 @@ namespace coop{
         will match on all function calls, that are made inside a loop, so they can later be checked
         against wether or not they use members and therefore those members' datalayout should be optimized
     */
+    struct loop_credentials{
+        std::vector<const FunctionDecl*> funcs;
+        bool isForLoop;
+        std::string identifier;
+    };
     class LoopFunctionsCallback : public coop::CoopMatchCallback {
     public:
-        std::map<const Stmt*, const FunctionDecl*> loop_function_calls;
+        std::map<const Stmt*, loop_credentials> loop_function_calls;
         LoopFunctionsCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+        void printData(){
+			for(auto lc : loop_function_calls){
+				coop::logger::log_stream << "loop " << lc.second.identifier.c_str();
+				coop::logger::out()++;
+				coop::logger::log_stream << "[";
+				for(auto f : lc.second.funcs){
+					coop::logger::log_stream << f->getNameAsString() << ", ";
+				}
+				coop::logger::log_stream << "]";
+				coop::logger::out()--;
+			}
+        }
     private:
         void run(const MatchFinder::MatchResult &result){
             SourceManager &srcMgr = result.Context->getSourceManager();
@@ -337,6 +236,7 @@ namespace coop{
 
             Stmt const *loop;
             char const *fileName;
+            bool isForLoop = true;
             if(const ForStmt* forLoop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
                 loop = forLoop;
                 fileName = is_user_source_file(srcMgr.getFilename(forLoop->getForLoc()).str().c_str());
@@ -344,19 +244,25 @@ namespace coop{
             }else if(const WhileStmt* whileLoop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
                 loop = whileLoop;
                 fileName = is_user_source_file(srcMgr.getFilename(whileLoop->getWhileLoc()).str().c_str());
+                isForLoop = false;
                 coop::logger::log_stream << "while";
             }
 
             //check if the loop occurs in a user file
             if(!fileName){
+                coop::logger::clear();
                 return;
             }
 
-            coop::logger::log_stream << "Loop [" <<
-                fileName << " @Line " << srcMgr.getPresumedLineNumber(loop->getLocStart()) << "]";
+            std::stringstream ss;
+            ss << "[" << fileName << ":" << srcMgr.getPresumedLineNumber(loop->getLocStart()) << "]";
+
+            coop::logger::log_stream << "Loop " << ss.str();
             coop::logger::out();
             
-            loop_function_calls[loop] = function_call;
+            loop_function_calls[loop].identifier = ss.str();
+            loop_function_calls[loop].isForLoop = isForLoop;
+            loop_function_calls[loop].funcs.push_back(function_call);
         }
     };
 
@@ -391,6 +297,161 @@ namespace coop{
         }
    };
 
+    template <class T>
+    struct data_matrix {
+        //the matrix mapping which T uses which P 
+        /*the setup will be e.g.
+            m_a, m_b, m_c, m_d
+        f1  x    x        
+        f2  x         x
+        f3
+        f4            x    x
+        */
+        float *mat;
+        //the matrix's dimension
+        size_t dim;
+        //the reference to the relevant instances referring to this matrix
+        std::map<const T*, std::vector<const MemberExpr*>> *relevant_instances;
+    private:
+        size_t fields;
+
+
+    public:
+        void init(size_t num_fields, std::map<const T*, std::vector<const MemberExpr*>> *ref){
+            fields = num_fields;
+            dim = fields * ref->size();
+            mat = static_cast<float*>(calloc(dim, sizeof(float)));
+            relevant_instances = ref;
+        }
+
+        float& at(int x, int y){
+            return mat[y * fields + x];
+        }
+    };
+
+    namespace record {
+        struct record_info {
+            void init(
+                const clang::RecordDecl* class_struct,
+                std::vector<const clang::FieldDecl*> *field_vector,
+                std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
+                std::map<const Stmt*, std::vector<const MemberExpr*>> *rlvnt_loops)
+                {
+
+                record = class_struct;
+                fields = field_vector;
+
+                fun_mem.init(fields->size(), rlvnt_funcs);
+                loop_mem.init(fields->size(), rlvnt_loops);
+
+                relevant_functions = rlvnt_funcs;
+                relevant_loops = rlvnt_loops;
+
+                //the fun_mem_mat will be written according to the indices the members are mapped to here
+                //since a function can mention the same member several times, we need to make sure each
+                //iteration over the same member associates with the same adress in the matrix (has the same index)
+                int index_count = 0;
+                for(auto f : *fields){
+                        member_idx_mapping[f] = index_count++;
+                }
+            }
+
+            ~record_info(){
+                free(fun_mem.mat);
+                free(loop_mem.mat);
+            }
+
+
+            //reference to the record node (class/struct) that is referred to by this struct
+            const clang::RecordDecl *record;
+            //reference to all the member nodes that the referred record has
+            std::vector<const clang::FieldDecl*> *fields;
+
+            //reference to the function-member mapping
+            std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>>
+                *relevant_functions;
+            //reference to the loop-member mapping
+            std::map<const clang::Stmt*, std::vector<const clang::MemberExpr*>>
+                *relevant_loops;
+
+            //the matrix mapping which function uses which member of the class
+            data_matrix<clang::FunctionDecl> fun_mem;
+            //the matrix mapping which loop uses which member of the class
+            data_matrix<clang::Stmt> loop_mem;
+
+            //will associate each member with a consistent index
+            std::map<const clang::FieldDecl*, int> member_idx_mapping;
+
+            //returns a list of members associated by a function for this record - if it does; else nullptr
+            std::vector<const MemberExpr*>* isRelevantFunction(const clang::FunctionDecl* func){
+                auto funcs_iter = relevant_functions->find(func);
+                if(funcs_iter != relevant_functions->end()){
+                    return &funcs_iter->second;
+                }
+                return nullptr;
+            }
+            
+            //returns the FieldDecl*s idx if the member is relevant to this record, else a negative value
+            int isRelevantField(const MemberExpr* memExpr){
+                const FieldDecl* field = static_cast<const FieldDecl*>(memExpr->getMemberDecl());
+                if(std::find(fields->begin(), fields->end(), field) != fields->end()){
+                    return member_idx_mapping[field];
+                }
+                return -1;
+            }
+
+            void print_func_mem_mat(){
+                std::function<const char* (const FunctionDecl*)> getNam = [](const FunctionDecl* fd){ return fd->getNameAsString().c_str();};
+                print_mat(&fun_mem, getNam);
+            }
+            void print_loop_mem_mat(LoopFunctionsCallback* lfc){
+                std::function<const char* (const Stmt*)> getNam = [lfc](const Stmt* ls){ 
+                    auto iter = lfc->loop_function_calls.find(ls);
+                    if(iter != lfc->loop_function_calls.end()){
+                        return iter->second.identifier.c_str();
+                    }
+                    return "unidentified loop -> this is most likely a bug!";
+                };
+                print_mat(&loop_mem, getNam);
+            }
+
+        private:
+            template<typename T>
+            void print_mat (data_matrix<T>* mat, std::function<const char* (const T*)>& getName){
+                int count = 0;
+                for(auto f : *fields){
+                    logger::log_stream << " " << f->getNameAsString().c_str() << "\t";
+                }
+                logger::out();
+                for(auto t : *mat->relevant_instances){
+                    logger::log_stream << "[";
+                    for(size_t o = 0; o < fields->size(); ++o){
+                        logger::log_stream << mat->at(o, count) << "\t";
+                        if(o == fields->size()-1){
+                            logger::log_stream << "] " << getName(t.first);
+                            logger::out();
+                        }else{
+                            logger::log_stream << ",";
+                        }
+                    }
+                    count++;
+                }
+            }
+        };
+    }
+
+    template <typename T> class Printer : public MatchFinder::MatchCallback {
+        const char* m_binder;
+        std::stringstream ss;
+    public:
+        explicit inline Printer(const char* binder):m_binder(binder){}
+
+        virtual void run(const MatchFinder::MatchResult &Result){
+            const T* p = Result.Nodes.getNodeAs<T>(m_binder);
+                ss << "found " << p->getNameAsString().c_str();
+                coop::logger::out(ss);
+        }
+    };
 
     bool are_same_variable(const clang::ValueDecl *First, const clang::ValueDecl *Second) {
         return First && Second &&
