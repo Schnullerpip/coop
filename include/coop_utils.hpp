@@ -1,13 +1,15 @@
 #ifndef COOP_UTILS_HPP
 #define COOP_UTILS_HPP
 
-#include "clang/AST/Decl.h"
 #include <ctime>
 #include <string>
 #include <stdlib.h>
 #include <sstream>
 #include <iostream>
 #include <functional>
+
+#include "clang/AST/Decl.h"
+#include "Logger.hpp"
 
 //defines
 #define coop_class_s "class"
@@ -18,74 +20,6 @@
 
 
 namespace coop{
-
-    namespace logger {
-        namespace {
-            const char* out_prefix = "[coop]::[logger]::[";
-        }
-
-        //configurable streams
-        std::ostream& out_stream = std::cout;
-        std::stringstream log_stream;
-        //configurable depth (out message indentation)
-        size_t depth = 0;
-
-        void clear(std::stringstream& msg_stream = log_stream){
-            msg_stream.str("");
-            msg_stream.clear();
-        }
-
-        /*outs message to out_stream*/
-        size_t& out(const char* msg, const char* append = "\n"){
-            //getting the time
-            time_t now = time(0);
-            char* now_s = ctime(&now);
-            size_t strln = strlen(now_s);
-            //getting rid of the weird trailing linebreak
-            now_s[strln-1]=']';
-
-            out_stream << out_prefix << now_s << "-> ";
-            for(size_t i = 0; i < depth; ++i){
-                out_stream << (i == 0 ? "  " : "|  ");
-            }
-            if(depth > 0){
-                out_stream << "|__ ";
-            }
-
-            out_stream << msg << append;
-            return depth;
-        }
-
-        /*outs message to out_stream*/
-        size_t& out(std::stringstream& msg_stream, const char* append = "\n"){
-            std::string msg = msg_stream.str();
-            clear(msg_stream);
-            return out(msg.c_str(), append);
-        }
-
-        size_t& out(){
-            return out(log_stream);
-        }
-
-
-        /*outs message to out_stream informing the user of a progress*/
-        enum Progress_Status {RUNNING, DONE, TODO};
-        size_t& out(const char* msg, Progress_Status status){
-            return out(msg, status == RUNNING ? " [running]\n" : status == DONE ? " [done]\n" : " [TODO!!!!!!!]\n");
-        }
-
-        /*outs message to out_stream informing the user of a progress*/
-        size_t& out(std::stringstream& msg_stream, Progress_Status status){
-            std::string msg = msg_stream.str();
-            msg_stream.str("");
-            msg_stream.clear();
-            return out(msg.c_str(), status);
-        }
-
-        void out(Progress_Status status){
-            out(log_stream, status);
-        }
-    }
 
     namespace match {
         DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);
@@ -150,21 +84,6 @@ namespace coop{
                 coop::logger::out();
                 class_fields_map[rd].push_back(member);
             }
-            ////retreive
-            //const RecordDecl* rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
-
-            //SourceManager &srcMgr = result.Context->getSourceManager();
-            //if(is_user_source_file(srcMgr.getFilename(rd->getLocation()).str().c_str())){
-            //    //register the field
-            //    clang::RecordDecl::field_iterator fi;
-            //    coop::logger::depth++;
-            //    for(fi = rd->field_begin(); fi != rd->field_end(); fi++){
-            //        class_fields_map[rd].push_back(*fi);
-            //        coop::logger::log_stream << "found '" << fi->getNameAsString().c_str() << "' in record '" << rd->getNameAsString().c_str() << "'";
-            //        coop::logger::out();
-            //    }
-            //    coop::logger::depth--;
-            //}
         }
     };
 
@@ -172,11 +91,14 @@ namespace coop{
         will cache the functions and the members they use so a member_matrix can be made for each class telling us
         how often which members are used inside which function
     */
-    class MemberUsageInFunctionsCallback : public coop::CoopMatchCallback{
+    class FunctionRegistrationCallback : public coop::CoopMatchCallback{
     public:
         //will hold all the functions, that use members and are therefore 'relevant' to us
         std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
-        MemberUsageInFunctionsCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+        //will associate each relevant function with an unique index
+        std::map<const FunctionDecl*, int> function_idx_mapping;
+
+        FunctionRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
     private:
         void run(const MatchFinder::MatchResult &result) override {
@@ -190,6 +112,12 @@ namespace coop{
 
                 //cache the function node for later traversal
                 relevant_functions[func].push_back(memExpr);
+
+                static int function_idx = 0;
+                if(function_idx_mapping.count(func) == 0){
+                    //the key is not present in the map yet
+                    function_idx_mapping[func] = function_idx++;
+                }
             }
         }
     };
@@ -272,28 +200,44 @@ namespace coop{
     */
    class LoopRegistrationCallback : public coop::CoopMatchCallback {
    public:
+        //will hold all the member-references that are made inside loops
         static std::map<const clang::Stmt*, std::vector<const clang::MemberExpr*>> loop_members_map;
+
+        //will associate each loop with an unique idx
+        static std::map<const clang::Stmt*, int> loop_idx_mapping;
+
+        static void register_loop(const clang::Stmt* loop){
+            if(loop_idx_mapping.count(loop) == 0){
+                //loop is not yet registered
+                static int loop_count = 0;
+                loop_idx_mapping[loop] = loop_count++;
+            }
+        }
+
         LoopRegistrationCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
    private:
         void run(const MatchFinder::MatchResult &result){
 
             const MemberExpr *member = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
+            Stmt const *loop_stmt;
 
             if(const ForStmt* loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
                 SourceManager &srcMgr = result.Context->getSourceManager();
                 if(is_user_source_file(srcMgr.getFilename(loop->getForLoc()).str().c_str())){
+                    loop_stmt = loop;
                     coop::logger::log_stream << "found for loop iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
                     coop::logger::out();
-                    loop_members_map[loop].push_back(member);
                 }
             }else if(const WhileStmt* loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
                 SourceManager &srcMgr = result.Context->getSourceManager();
                 if(is_user_source_file(srcMgr.getFilename(loop->getWhileLoc()).str().c_str())){
+                    loop_stmt = loop;
                     coop::logger::log_stream << "found while loop iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
                     coop::logger::out();
-                    loop_members_map[loop].push_back(member);
                 }
             }
+            loop_members_map[loop_stmt].push_back(member);
+            coop::LoopRegistrationCallback::register_loop(loop_stmt);
         }
    };
 
