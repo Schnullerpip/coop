@@ -1,13 +1,8 @@
-// Declares clang::SyntaxOnlyAction.
-#include "clang/Frontend/FrontendActions.h"
-#include "clang/Tooling/CommonOptionsParser.h"
-#include "clang/Tooling/Tooling.h"
-// Declares llvm::cl::extrahelp.
-#include "llvm/Support/CommandLine.h"
-#include "clang/ASTMatchers/ASTMatchers.h"
-#include "clang/ASTMatchers/ASTMatchFinder.h"
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/AST/ASTContext.h"
+//custom includes
+#include "SystemStateInformation.hpp"
+#include "coop_utils.hpp"
+//custom needed
+#include "clang/AST/DeclCXX.h"
 
 using namespace clang::tooling;
 using namespace llvm;
@@ -15,17 +10,6 @@ using namespace llvm;
 using namespace clang;
 using namespace clang::ast_matchers;
 
-//custom includes
-#include "SystemStateInformation.hpp"
-#include "coop_utils.hpp"
-//custom needed
-#include "clang/AST/DeclCXX.h"
-
-std::map<const clang::Stmt*, std::vector<const clang::MemberExpr*>>
-coop::LoopRegistrationCallback::loop_members_map = {};
-
-std::map<const clang::Stmt*, int>
-coop::LoopRegistrationCallback::loop_idx_mapping = {};
 
 
 // -------------- GENERAL STUFF ----------------------------------------------------------
