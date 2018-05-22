@@ -126,7 +126,7 @@ namespace coop{
         Will cache all members used in loops and the loops respectively, so they can later be used
         to deduce a heuristic considering member usage
     */
-   class LoopRegistrationCallback : public coop::CoopMatchCallback {
+   class LoopMemberUsageCallback : public coop::CoopMatchCallback {
    public:
         //will hold all the member-references that are made inside loops
         static std::map<const clang::Stmt*, loop_credentials>
@@ -138,7 +138,7 @@ namespace coop{
 
         static void register_loop(const clang::Stmt* loop);
 
-        LoopRegistrationCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+        LoopMemberUsageCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
    private:
         void run(const MatchFinder::MatchResult &result);
    };
@@ -236,7 +236,7 @@ namespace coop{
             int isRelevantField(const MemberExpr* memExpr);
 
             void print_func_mem_mat();
-            void print_loop_mem_mat(LoopRegistrationCallback* loop_registry);
+            void print_loop_mem_mat(LoopMemberUsageCallback* loop_registry);
 
         private:
             template<typename T, typename P>

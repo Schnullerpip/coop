@@ -2,10 +2,10 @@
 
 //static variables
 std::map<const clang::Stmt*, coop::loop_credentials>
-coop::LoopRegistrationCallback::loops = {};
+coop::LoopMemberUsageCallback::loops = {};
 
 std::map<const clang::Stmt*, int>
-coop::LoopRegistrationCallback::loop_idx_mapping = {};
+coop::LoopMemberUsageCallback::loop_idx_mapping = {};
 
 std::map<const clang::Stmt*, const clang::Stmt*>
 coop::NestedLoopCallback::parent_child_map = {};
@@ -136,9 +136,9 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     loop_function_calls[loop].funcs.push_back(function_call);
 }
 
-/*LoopRegistrationCallback*/
+/*LoopMemberUsageCallback*/
 
-void coop::LoopRegistrationCallback::register_loop(const clang::Stmt* loop){
+void coop::LoopMemberUsageCallback::register_loop(const clang::Stmt* loop){
     if(loop_idx_mapping.count(loop) == 0){
         //loop is not yet registered
         static int loop_count = 0;
@@ -146,7 +146,7 @@ void coop::LoopRegistrationCallback::register_loop(const clang::Stmt* loop){
     }
 }
 
-void coop::LoopRegistrationCallback::run(const MatchFinder::MatchResult &result){
+void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
 
     const MemberExpr *member = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
     Stmt const *loop_stmt;
@@ -175,7 +175,7 @@ void coop::LoopRegistrationCallback::run(const MatchFinder::MatchResult &result)
     loop_info->identifier = ss.str();
     loop_info->isForLoop = isForLoop;
     loop_info->member_usages.push_back(member);
-    coop::LoopRegistrationCallback::register_loop(loop_stmt);
+    coop::LoopMemberUsageCallback::register_loop(loop_stmt);
 }
 
 /*NestedLoopCallback*/
@@ -256,7 +256,7 @@ void coop::record::record_info::print_func_mem_mat(){
     std::function<const char* (const FunctionDecl*)> getNam = [](const FunctionDecl* fd){ return fd->getNameAsString().c_str();};
     print_mat(&fun_mem, getNam);
 }
-void coop::record::record_info::print_loop_mem_mat(LoopRegistrationCallback* loop_registry){
+void coop::record::record_info::print_loop_mem_mat(LoopMemberUsageCallback* loop_registry){
     std::function<const char* (const Stmt*)> getNam = [loop_registry](const Stmt* ls){ 
 
         auto loop_iter = loop_registry->loops.find(ls);

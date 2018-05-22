@@ -49,15 +49,15 @@ int main(int argc, const char **argv) {
 		coop::MemberRegistrationCallback member_registration_callback(&user_files);
 		coop::FunctionRegistrationCallback member_usage_callback(&user_files);
 		coop::LoopFunctionsCallback loop_functions_callback(&user_files);
-		coop::LoopRegistrationCallback for_loop_registration_callback(&user_files);
-		coop::LoopRegistrationCallback while_loop_registration_callback(&user_files);
+		coop::LoopMemberUsageCallback for_loop_member_usages_callback(&user_files);
+		coop::LoopMemberUsageCallback while_loop_member_usages_callback(&user_files);
 		coop::NestedLoopCallback nested_loop_callback(&user_files);
 
 		data_aggregation.addMatcher(coop::match::members, &member_registration_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
 		data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_registration_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_registration_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_member_usages_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_member_usages_callback);
 		data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
@@ -99,11 +99,11 @@ int main(int argc, const char **argv) {
 			}else {
 				//since this loop is relevant to us - check wether it is registered yet
 				//if it doesnt directly associate members it wont be registered yet
-				auto iter = coop::LoopRegistrationCallback::loops.find(fc.first);
-				if(iter == coop::LoopRegistrationCallback::loops.end()){
+				auto iter = coop::LoopMemberUsageCallback::loops.find(fc.first);
+				if(iter == coop::LoopMemberUsageCallback::loops.end()){
 					//the relevant loop is NOT registered yet -> register it, by adding it to the list
-					coop::LoopRegistrationCallback::loops[fc.first].identifier = "TODO";
-					coop::LoopRegistrationCallback::register_loop(fc.first);
+					coop::LoopMemberUsageCallback::loops[fc.first].identifier = "TODO";
+					coop::LoopMemberUsageCallback::register_loop(fc.first);
 				}
 			}
 		}
@@ -118,7 +118,7 @@ int main(int argc, const char **argv) {
 			//initializing the info struct
 			rec_ref.init(rec, fields,
 				&member_usage_callback.relevant_functions,
-				&coop::LoopRegistrationCallback::loops);
+				&coop::LoopMemberUsageCallback::loops);
 			//iterate over each function to fill the function-member matrix of this record_info
 			{
 				for(auto func_mems : member_usage_callback.relevant_functions){
@@ -145,8 +145,8 @@ int main(int argc, const char **argv) {
 			}
 			//iterate over each loop to fill the loop-member matrix of this record_info
 			{
-				auto loop_mems_map = &coop::LoopRegistrationCallback::loops;
-				auto &loop_idxs = coop::LoopRegistrationCallback::loop_idx_mapping;
+				auto loop_mems_map = &coop::LoopMemberUsageCallback::loops;
+				auto &loop_idxs = coop::LoopMemberUsageCallback::loop_idx_mapping;
 				for(auto loop_mems : *loop_mems_map){
 					auto loop = loop_mems.first;
 					int loop_idx = loop_idxs[loop];
@@ -213,7 +213,7 @@ int main(int argc, const char **argv) {
 			coop::logger::depth--;
 			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix:";
 			coop::logger::out()++;
-			rec_ref.print_loop_mem_mat(&for_loop_registration_callback);
+			rec_ref.print_loop_mem_mat(&for_loop_member_usages_callback);
 			coop::logger::depth--;
 		}
 
