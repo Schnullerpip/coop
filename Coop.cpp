@@ -51,12 +51,14 @@ int main(int argc, const char **argv) {
 		coop::LoopFunctionsCallback loop_functions_callback(&user_files);
 		coop::LoopRegistrationCallback for_loop_registration_callback(&user_files);
 		coop::LoopRegistrationCallback while_loop_registration_callback(&user_files);
+		coop::NestedLoopCallback nested_loop_callback(&user_files);
 
 		data_aggregation.addMatcher(coop::match::members, &member_registration_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
 		data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_registration_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_registration_callback);
+		data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
@@ -75,7 +77,7 @@ int main(int argc, const char **argv) {
 			new coop::record::record_info[member_registration_callback.class_fields_map.size()]();
 
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
-		//the loop_registration_callback contain all the loops that directly associate members
+		//the loop_registration_callback contains all the loops that directly associate members
 		//loop_functions_callback contains all the loops, that call functions and therefore might indirectly associate members
 		//find out which loop_functions_callback's functions are missing and extend the loop_registration
 
@@ -97,10 +99,10 @@ int main(int argc, const char **argv) {
 			}else {
 				//since this loop is relevant to us - check wether it is registered yet
 				//if it doesnt directly associate members it wont be registered yet
-				auto iter = coop::LoopRegistrationCallback::loop_members_map.find(fc.first);
-				if(iter == coop::LoopRegistrationCallback::loop_members_map.end()){
+				auto iter = coop::LoopRegistrationCallback::loops.find(fc.first);
+				if(iter == coop::LoopRegistrationCallback::loops.end()){
 					//the relevant loop is NOT registered yet -> register it, by adding it to the list
-					coop::LoopRegistrationCallback::loop_members_map[fc.first];
+					coop::LoopRegistrationCallback::loops[fc.first].identifier = "TODO";
 					coop::LoopRegistrationCallback::register_loop(fc.first);
 				}
 			}
@@ -116,7 +118,7 @@ int main(int argc, const char **argv) {
 			//initializing the info struct
 			rec_ref.init(rec, fields,
 				&member_usage_callback.relevant_functions,
-				&coop::LoopRegistrationCallback::loop_members_map);
+				&coop::LoopRegistrationCallback::loops);
 			//iterate over each function to fill the function-member matrix of this record_info
 			{
 				for(auto func_mems : member_usage_callback.relevant_functions){
@@ -143,13 +145,13 @@ int main(int argc, const char **argv) {
 			}
 			//iterate over each loop to fill the loop-member matrix of this record_info
 			{
-				auto loop_mems_map = &coop::LoopRegistrationCallback::loop_members_map;
+				auto loop_mems_map = &coop::LoopRegistrationCallback::loops;
 				auto &loop_idxs = coop::LoopRegistrationCallback::loop_idx_mapping;
 				for(auto loop_mems : *loop_mems_map){
 					auto loop = loop_mems.first;
 					int loop_idx = loop_idxs[loop];
 					//iterate over each member that loop uses
-					for(auto mem : loop_mems.second){
+					for(auto mem : loop_mems.second.member_usages){
 
 						log_stream << "checking loop has member '"
 							<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec->getNameAsString().c_str();
@@ -202,8 +204,6 @@ int main(int argc, const char **argv) {
 					}
 					coop::logger::depth--;
 				}
-                coop::logger::log_stream << "record '" << record_stats[rec_count].record->getNameAsString().c_str() << "'s [LOOP/MEMBER] matrix:";
-				coop::logger::out();
 				rec_count++;
 			}
 
@@ -213,7 +213,7 @@ int main(int argc, const char **argv) {
 			coop::logger::depth--;
 			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix:";
 			coop::logger::out()++;
-			rec_ref.print_loop_mem_mat(&loop_functions_callback);
+			rec_ref.print_loop_mem_mat(&for_loop_registration_callback);
 			coop::logger::depth--;
 		}
 

@@ -27,7 +27,10 @@ void C::bar(A& a){
 void foob(A& a, C& c){
 	for(;;){
 		c.m_d += 1;
-		c.foo(c.m_d, a);
+		//c.foo(c.m_d, a);
+		for(;;){
+			c.m_d++;
+		}
 	}
 	a.m_a += (a.m_a += 1);
 	a.m_b += (a.m_b += 1);

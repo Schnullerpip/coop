@@ -1,5 +1,5 @@
 1. cache all loop usages, that associate members [DONE]
-2. cache all loop usages, that associate function-calls (later reduce to those using members)
+2. cache all loop usages, that associate function-calls (later reduce to those using members)[DONE]
 3. create loop_member matrices for each record
 	|_dereference each loop and count members (inner-outer loops will be shown separately)[DONE]
 	|_dereference loop_functioncalls (step 2.) using the already made member_matrices and add to the count[DONE]

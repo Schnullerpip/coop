@@ -1,11 +1,14 @@
 #include "coop_utils.hpp"
 
 //static variables
-std::map<const clang::Stmt*, std::vector<const clang::MemberExpr*>>
-coop::LoopRegistrationCallback::loop_members_map = {};
+std::map<const clang::Stmt*, coop::loop_credentials>
+coop::LoopRegistrationCallback::loops = {};
 
 std::map<const clang::Stmt*, int>
 coop::LoopRegistrationCallback::loop_idx_mapping = {};
+
+std::map<const clang::Stmt*, const clang::Stmt*>
+coop::NestedLoopCallback::parent_child_map = {};
 
 //method implementations
 const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
@@ -18,6 +21,18 @@ const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path)
     }
     return relevant_token;
 }
+
+void coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream &dest){
+    const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getForLoc()).str().c_str());
+    dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+}
+void coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream &dest){
+    const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getWhileLoc()).str().c_str());
+    dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+}
+
+
+/*MemberRegistrationCallback*/
 
 void coop::MemberRegistrationCallback::printData(){
     for(auto pair : class_fields_map){
@@ -41,6 +56,7 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
     }
 }
 
+/*FunctionRegistrationCallback*/
 void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &result){
     const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
     const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
@@ -61,6 +77,7 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
     }
 }
 
+/*LoopFunctionsCallback*/
 void coop::LoopFunctionsCallback::printData(){
     for(auto lc : loop_function_calls){
         coop::logger::log_stream << "loop " << lc.second.identifier.c_str();
@@ -119,6 +136,8 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     loop_function_calls[loop].funcs.push_back(function_call);
 }
 
+/*LoopRegistrationCallback*/
+
 void coop::LoopRegistrationCallback::register_loop(const clang::Stmt* loop){
     if(loop_idx_mapping.count(loop) == 0){
         //loop is not yet registered
@@ -131,32 +150,72 @@ void coop::LoopRegistrationCallback::run(const MatchFinder::MatchResult &result)
 
     const MemberExpr *member = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
     Stmt const *loop_stmt;
+    std::stringstream ss;
+    bool isForLoop = true;
 
     if(const ForStmt* loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
         if(is_user_source_file(srcMgr.getFilename(loop->getForLoc()).str().c_str())){
             loop_stmt = loop;
-            coop::logger::log_stream << "found for loop iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+            get_for_loop_identifier(loop, &srcMgr, ss);
+            coop::logger::log_stream << "found 'for loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
             coop::logger::out();
         }
     }else if(const WhileStmt* loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
         if(is_user_source_file(srcMgr.getFilename(loop->getWhileLoc()).str().c_str())){
             loop_stmt = loop;
-            coop::logger::log_stream << "found while loop iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+            isForLoop = false;
+            get_while_loop_identifier(loop, &srcMgr, ss);
+            coop::logger::log_stream << "found 'while loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
             coop::logger::out();
         }
     }
-    loop_members_map[loop_stmt].push_back(member);
+    auto loop_info = &loops[loop_stmt];
+    loop_info->identifier = ss.str();
+    loop_info->isForLoop = isForLoop;
+    loop_info->member_usages.push_back(member);
     coop::LoopRegistrationCallback::register_loop(loop_stmt);
 }
+
+/*NestedLoopCallback*/
+void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
+    SourceManager &srcMgr = result.Context->getSourceManager();
+
+    //find parent loop
+    {
+        std::stringstream ss;
+        if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_parent_for_loop_s)){
+            get_for_loop_identifier(for_loop_parent, &srcMgr, ss);
+            coop::logger::log_stream << "found PARENT 'for loop' " << ss.str();
+        }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_parent_while_loop_s)){
+            get_while_loop_identifier(while_loop_parent, &srcMgr, ss);
+            coop::logger::log_stream << "found PARENT 'while loop' " << ss.str();
+        }
+        coop::logger::log_stream << " parenting -> ";
+    }
+
+    //find child loop
+    {
+        std::stringstream ss;
+        if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
+            get_for_loop_identifier(for_loop_child, &srcMgr, ss);
+            coop::logger::log_stream << "'for loop' " << ss.str();
+        }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
+            get_while_loop_identifier(while_loop_child, &srcMgr, ss);
+            coop::logger::log_stream << "'while loop' " << ss.str();
+        }
+    }
+    coop::logger::out();
+}
+
 
 
 void coop::record::record_info::init(
     const clang::RecordDecl* class_struct,
     std::vector<const clang::FieldDecl*> *field_vector,
     std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
-    std::map<const Stmt*, std::vector<const MemberExpr*>> *rlvnt_loops)
+    std::map<const Stmt*, loop_credentials> *rlvnt_loops)
     {
 
     record = class_struct;
@@ -197,11 +256,12 @@ void coop::record::record_info::print_func_mem_mat(){
     std::function<const char* (const FunctionDecl*)> getNam = [](const FunctionDecl* fd){ return fd->getNameAsString().c_str();};
     print_mat(&fun_mem, getNam);
 }
-void coop::record::record_info::print_loop_mem_mat(LoopFunctionsCallback* lfc){
-    std::function<const char* (const Stmt*)> getNam = [lfc](const Stmt* ls){ 
-        auto iter = lfc->loop_function_calls.find(ls);
-        if(iter != lfc->loop_function_calls.end()){
-            return iter->second.identifier.c_str();
+void coop::record::record_info::print_loop_mem_mat(LoopRegistrationCallback* loop_registry){
+    std::function<const char* (const Stmt*)> getNam = [loop_registry](const Stmt* ls){ 
+
+        auto loop_iter = loop_registry->loops.find(ls);
+        if(loop_iter != loop_registry->loops.end()){
+            return loop_iter->second.identifier.c_str();
         }
         return "unidentified loop -> this is most likely a bug!";
     };
@@ -218,7 +278,12 @@ namespace coop {
 		StatementMatcher members_used_in_functions = memberExpr(hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
 
         StatementMatcher loops = anyOf(forStmt().bind(coop_loop_s), whileStmt().bind(coop_loop_s));
+        StatementMatcher loops_distinct = anyOf(forStmt().bind(coop_for_loop_s), whileStmt().bind(coop_while_loop_s));
         StatementMatcher function_calls_in_loops = callExpr(hasAncestor(loops)).bind(coop_function_call_s);
+        auto has_loop_descendant = hasDescendant(loops_distinct);
+        StatementMatcher nested_loops =
+            anyOf(forStmt(has_loop_descendant).bind(coop_parent_for_loop_s),
+                  whileStmt(has_loop_descendant).bind(coop_parent_while_loop_s));
 
         StatementMatcher members_used_in_for_loops =
             memberExpr(hasAncestor(forStmt().bind(coop_loop_s))).bind(coop_member_s);
