@@ -248,7 +248,7 @@ namespace coop{
             int isRelevantField(const MemberExpr* memExpr);
 
             void print_func_mem_mat();
-            void print_loop_mem_mat(LoopMemberUsageCallback* loop_registry);
+            void print_loop_mem_mat();
 
         private:
             template<typename T, typename P>

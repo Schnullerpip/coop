@@ -313,11 +313,11 @@ void coop::record::record_info::print_func_mem_mat(){
     };
     print_mat(&fun_mem, getNam, getIdx);
 }
-void coop::record::record_info::print_loop_mem_mat(LoopMemberUsageCallback* loop_registry){
-    std::function<const char* (const Stmt*)> getNam = [loop_registry](const Stmt* ls){ 
+void coop::record::record_info::print_loop_mem_mat(){
+    std::function<const char* (const Stmt*)> getNam = [](const Stmt* ls){ 
 
-        auto loop_iter = loop_registry->loops.find(ls);
-        if(loop_iter != loop_registry->loops.end()){
+        auto loop_iter = LoopMemberUsageCallback::loops.find(ls);
+        if(loop_iter != LoopMemberUsageCallback::loops.end()){
             return loop_iter->second.identifier.c_str();
         }
         return "unidentified loop -> this is most likely a bug!";

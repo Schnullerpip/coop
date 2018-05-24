@@ -219,7 +219,7 @@ int main(int argc, const char **argv) {
 			rec_ref.print_func_mem_mat();
 			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:";
 			coop::logger::out();
-			rec_ref.print_loop_mem_mat(&for_loop_member_usages_callback);
+			rec_ref.print_loop_mem_mat();
 
 			coop::logger::out("weighting nested loops", coop::logger::RUNNING)++;
 				nested_loop_callback.print_data();
@@ -237,7 +237,7 @@ int main(int argc, const char **argv) {
 				);
 				coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix after weighting:";
 				coop::logger::out();
-				rec_ref.print_loop_mem_mat(&for_loop_member_usages_callback);
+				rec_ref.print_loop_mem_mat();
 
 			coop::logger::depth--;
 			coop::logger::out("weighting nested loops", coop::logger::TODO);
