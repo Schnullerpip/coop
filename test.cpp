@@ -30,6 +30,7 @@ void foob(A& a, C& c){
 		//c.foo(c.m_d, a);
 		for(;;){
 			c.m_d++;
+			a.m_c[0]++;
 		}
 	}
 	a.m_a += (a.m_a += 1);
