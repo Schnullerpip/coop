@@ -2,13 +2,19 @@
 
 //static variables
 std::map<const clang::Stmt*, coop::loop_credentials>
-coop::LoopMemberUsageCallback::loops = {};
+    coop::LoopMemberUsageCallback::loops = {};
 
 std::map<const clang::Stmt*, int>
-coop::LoopMemberUsageCallback::loop_idx_mapping = {};
+    coop::LoopMemberUsageCallback::loop_idx_mapping = {};
 
 std::map<const clang::Stmt*, const clang::Stmt*>
-coop::NestedLoopCallback::parent_child_map = {};
+    coop::NestedLoopCallback::parent_child_map = {};
+
+std::map<const FunctionDecl*, std::vector<const MemberExpr*>>
+    coop::FunctionRegistrationCallback::relevant_functions = {};
+
+std::map<const FunctionDecl*, int>
+    coop::FunctionRegistrationCallback::function_idx_mapping = {};
 
 //method implementations
 const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
@@ -22,13 +28,13 @@ const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path)
     return relevant_token;
 }
 
-void coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream &dest){
+void coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
     const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getForLoc()).str().c_str());
-    dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+    *dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
 }
-void coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream &dest){
+void coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
     const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getWhileLoc()).str().c_str());
-    dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+    *dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
 }
 
 
@@ -134,6 +140,10 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     loop_function_calls[loop].identifier = ss.str();
     loop_function_calls[loop].isForLoop = isForLoop;
     loop_function_calls[loop].funcs.push_back(function_call);
+
+    /*since here we find really each functionCall made inside a loop, we dont want to directly register this loop
+    after the matchers have run over the AST we will aggregate additional data and then filter these loops with information we do not have right now
+    remember -> during AST traversal we can never expect the momentary information to be complete*/
 }
 
 /*LoopMemberUsageCallback*/
@@ -157,7 +167,7 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
         SourceManager &srcMgr = result.Context->getSourceManager();
         if(is_user_source_file(srcMgr.getFilename(loop->getForLoc()).str().c_str())){
             loop_stmt = loop;
-            get_for_loop_identifier(loop, &srcMgr, ss);
+            get_for_loop_identifier(loop, &srcMgr, &ss);
             coop::logger::log_stream << "found 'for loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
             coop::logger::out();
         }
@@ -166,7 +176,7 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
         if(is_user_source_file(srcMgr.getFilename(loop->getWhileLoc()).str().c_str())){
             loop_stmt = loop;
             isForLoop = false;
-            get_while_loop_identifier(loop, &srcMgr, ss);
+            get_while_loop_identifier(loop, &srcMgr, &ss);
             coop::logger::log_stream << "found 'while loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
             coop::logger::out();
         }
@@ -186,10 +196,10 @@ void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
     {
         std::stringstream ss;
         if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_parent_for_loop_s)){
-            get_for_loop_identifier(for_loop_parent, &srcMgr, ss);
+            get_for_loop_identifier(for_loop_parent, &srcMgr, &ss);
             coop::logger::log_stream << "found PARENT 'for loop' " << ss.str();
         }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_parent_while_loop_s)){
-            get_while_loop_identifier(while_loop_parent, &srcMgr, ss);
+            get_while_loop_identifier(while_loop_parent, &srcMgr, &ss);
             coop::logger::log_stream << "found PARENT 'while loop' " << ss.str();
         }
         coop::logger::log_stream << " parenting -> ";
@@ -199,10 +209,10 @@ void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
     {
         std::stringstream ss;
         if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
-            get_for_loop_identifier(for_loop_child, &srcMgr, ss);
+            get_for_loop_identifier(for_loop_child, &srcMgr, &ss);
             coop::logger::log_stream << "'for loop' " << ss.str();
         }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
-            get_while_loop_identifier(while_loop_child, &srcMgr, ss);
+            get_while_loop_identifier(while_loop_child, &srcMgr, &ss);
             coop::logger::log_stream << "'while loop' " << ss.str();
         }
     }
@@ -254,7 +264,10 @@ int coop::record::record_info::isRelevantField(const MemberExpr* memExpr){
 
 void coop::record::record_info::print_func_mem_mat(){
     std::function<const char* (const FunctionDecl*)> getNam = [](const FunctionDecl* fd){ return fd->getNameAsString().c_str();};
-    print_mat(&fun_mem, getNam);
+    std::function<int (const FunctionDecl*)> getIdx = [](const FunctionDecl* fd){
+        return FunctionRegistrationCallback::function_idx_mapping[fd];
+    };
+    print_mat(&fun_mem, getNam, getIdx);
 }
 void coop::record::record_info::print_loop_mem_mat(LoopMemberUsageCallback* loop_registry){
     std::function<const char* (const Stmt*)> getNam = [loop_registry](const Stmt* ls){ 
@@ -265,7 +278,11 @@ void coop::record::record_info::print_loop_mem_mat(LoopMemberUsageCallback* loop
         }
         return "unidentified loop -> this is most likely a bug!";
     };
-    print_mat(&loop_mem, getNam);
+
+    std::function<int (const Stmt*)> getIdx = [](const Stmt* ls){
+        return LoopMemberUsageCallback::loop_idx_mapping[ls];
+    };
+    print_mat(&loop_mem, getNam, getIdx);
 }
 
 

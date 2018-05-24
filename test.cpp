@@ -32,6 +32,7 @@ void foob(A& a, C& c){
 			c.m_d++;
 			a.m_c[0]++;
 		}
+		a.m_b++;
 	}
 	a.m_a += (a.m_a += 1);
 	a.m_b += (a.m_b += 1);

@@ -102,7 +102,8 @@ int main(int argc, const char **argv) {
 				auto iter = coop::LoopMemberUsageCallback::loops.find(fc.first);
 				if(iter == coop::LoopMemberUsageCallback::loops.end()){
 					//the relevant loop is NOT registered yet -> register it, by adding it to the list
-					coop::LoopMemberUsageCallback::loops[fc.first].identifier = "TODO";
+					coop::LoopMemberUsageCallback::loops.insert(std::pair<const Stmt*, coop::loop_credentials>(fc.first, fc.second));
+					//coop::LoopMemberUsageCallback::loops[fc.first].identifier = "TODO";
 					coop::LoopMemberUsageCallback::register_loop(fc.first);
 				}
 			}
@@ -149,11 +150,12 @@ int main(int argc, const char **argv) {
 				auto &loop_idxs = coop::LoopMemberUsageCallback::loop_idx_mapping;
 				for(auto loop_mems : *loop_mems_map){
 					auto loop = loop_mems.first;
+					auto loop_info = &coop::LoopMemberUsageCallback::loops[loop];
 					int loop_idx = loop_idxs[loop];
 					//iterate over each member that loop uses
 					for(auto mem : loop_mems.second.member_usages){
 
-						log_stream << "checking loop has member '"
+						log_stream << "checking loop " << loop_info->identifier << "("<< loop_idx <<") has member '"
 							<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec->getNameAsString().c_str();
 
 						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());

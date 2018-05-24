@@ -64,8 +64,8 @@ namespace coop{
                 :user_source_files(user_source_files){}
         protected:
             const char* is_user_source_file(const char* file_path);
-            void get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream&);
-            void get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream&);
+            void get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream*);
+            void get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream*);
         private:
             const std::vector<const char*> *user_source_files;
             virtual void run(const MatchFinder::MatchResult &result) = 0;
@@ -91,9 +91,9 @@ namespace coop{
     class FunctionRegistrationCallback : public coop::CoopMatchCallback{
     public:
         //will hold all the functions, that use members and are therefore 'relevant' to us
-        std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
-        //will associate each relevant function with an unique index
-        std::map<const FunctionDecl*, int> function_idx_mapping;
+        static std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
+        //will associate each relevant function with a unique index
+        static std::map<const FunctionDecl*, int> function_idx_mapping;
 
         FunctionRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
@@ -240,8 +240,9 @@ namespace coop{
 
         private:
             template<typename T, typename P>
-            void print_mat (data_matrix<T, P>* mat, std::function<const char* (const T*)>& getName){
-                int count = 0;
+            void print_mat (data_matrix<T, P>* mat,
+                std::function<const char* (const T*)>& getName,
+                std::function<int (const T*)>& getIdx){
                 for(auto f : *fields){
                     logger::log_stream << " " << f->getNameAsString().c_str() << "\t";
                 }
@@ -249,7 +250,7 @@ namespace coop{
                 for(auto t : *mat->relevant_instances){
                     logger::log_stream << "[";
                     for(size_t o = 0; o < fields->size(); ++o){
-                        logger::log_stream << mat->at(o, count) << "\t";
+                        logger::log_stream << mat->at(o, getIdx(t.first)) << "\t";
                         if(o == fields->size()-1){
                             logger::log_stream << "] " << getName(t.first);
                             logger::out();
@@ -257,7 +258,6 @@ namespace coop{
                             logger::log_stream << ",";
                         }
                     }
-                    count++;
                 }
             }
         };
