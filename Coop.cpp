@@ -25,6 +25,11 @@ static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 // -------------- GENERAL STUFF ----------------------------------------------------------
 
 
+//function heads
+void recursive_weighting(coop::record::record_info *rec_info, const Stmt* child_loop);
+
+
+//main start
 int main(int argc, const char **argv) {
 
 	//setup
@@ -155,7 +160,7 @@ int main(int argc, const char **argv) {
 					//iterate over each member that loop uses
 					for(auto mem : loop_mems.second.member_usages){
 
-						log_stream << "checking loop " << loop_info->identifier << "("<< loop_idx <<") has member '"
+						log_stream << "checking loop " << loop_info->identifier << " has member '"
 							<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec->getNameAsString().c_str();
 
 						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
@@ -210,20 +215,33 @@ int main(int argc, const char **argv) {
 			}
 
 			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:";
-			coop::logger::out()++;
+			coop::logger::out();
 			rec_ref.print_func_mem_mat();
-			coop::logger::depth--;
-			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix:";
-			coop::logger::out()++;
+			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:";
+			coop::logger::out();
 			rec_ref.print_loop_mem_mat(&for_loop_member_usages_callback);
+
+			coop::logger::out("weighting nested loops", coop::logger::RUNNING)++;
+				nested_loop_callback.print_data();
+				//We should now have record_infos with valid information on which members are used by which function/loop
+				//we also have the information on which loop parents which other loops
+				//our approach will be to determine the loopdepth of each variable to approximate its 'weight' or 'usage frequency'
+				//and therefore it's importance to the performance of the program
+				//we can't reason about which loop is most important (probably), but we can take an educated guess by saying:
+				//"greater loopdepth means the chance of this field being used often is also greater"
+
+				nested_loop_callback.traverse_parents_children(
+					[&rec_ref](std::map<const clang::Stmt *, coop::loop_credentials>::iterator *p, const Stmt* child_loop){
+						recursive_weighting(&rec_ref, child_loop);
+					}
+				);
+				coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix after weighting:";
+				coop::logger::out();
+				rec_ref.print_loop_mem_mat(&for_loop_member_usages_callback);
+
 			coop::logger::depth--;
+			coop::logger::out("weighting nested loops", coop::logger::TODO);
 		}
-
-		coop::logger::out("checking for nested loops", coop::logger::RUNNING)++;
-		//TODO
-		coop::logger::depth--;
-		coop::logger::out("checking for nested loops", coop::logger::TODO);
-
 		coop::logger::depth--;
 		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
 
@@ -250,4 +268,25 @@ int main(int argc, const char **argv) {
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
 
 	return execution_state;
+}
+
+void recursive_weighting(coop::record::record_info *rec_ref, const Stmt* loop_stmt){
+	//if this child_loop is relevant to us (if it associates members)
+	auto loop_idx_iter = coop::LoopMemberUsageCallback::loop_idx_mapping.find(loop_stmt);
+	if(loop_idx_iter != coop::LoopMemberUsageCallback::loop_idx_mapping.end()){
+		int loop_idx = (*loop_idx_iter).second;
+		//update the current record's member usage statistic
+		for(unsigned i = 0; i < rec_ref->fields->size(); ++i){
+			//since this IS  a nested loop (child loop) we can ass some arbitrary factor to the members'weights
+			rec_ref->loop_mem.at(i, loop_idx) *= 10;
+		}
+		//since this loop_stmt could also parent other loops -> go recursive
+		auto loop_stmt_iter = coop::NestedLoopCallback::parent_child_map.find(loop_stmt);
+		if(loop_stmt_iter != coop::NestedLoopCallback::parent_child_map.end()){
+			//this loop nests other loops -> go find them and do the same thing over again
+			for(auto child : (*loop_stmt_iter).second){
+				recursive_weighting(rec_ref, child);
+			}
+		}
+	}
 }

@@ -31,6 +31,12 @@ void foob(A& a, C& c){
 		for(;;){
 			c.m_d++;
 			a.m_c[0]++;
+			for(;;){
+				c.m_d++;
+			}
+			for(;;){
+				a.m_a++;
+			}
 		}
 		a.m_b++;
 	}

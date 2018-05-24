@@ -7,7 +7,7 @@ std::map<const clang::Stmt*, coop::loop_credentials>
 std::map<const clang::Stmt*, int>
     coop::LoopMemberUsageCallback::loop_idx_mapping = {};
 
-std::map<const clang::Stmt*, const clang::Stmt*>
+std::map<const clang::Stmt*, std::vector<const clang::Stmt*>>
     coop::NestedLoopCallback::parent_child_map = {};
 
 std::map<const FunctionDecl*, std::vector<const MemberExpr*>>
@@ -28,13 +28,15 @@ const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path)
     return relevant_token;
 }
 
-void coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
+bool coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
     const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getForLoc()).str().c_str());
-    *dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+    *dest << "[F:" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+    return fileName != nullptr;
 }
-void coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
+bool coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
     const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getWhileLoc()).str().c_str());
-    *dest << "[" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+    *dest << "[W:" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+    return fileName != nullptr;
 }
 
 
@@ -99,6 +101,7 @@ void coop::LoopFunctionsCallback::printData(){
 
 void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     SourceManager &srcMgr = result.Context->getSourceManager();
+    std::stringstream ss;
 
     const FunctionDecl *function_call = result.Nodes.getNodeAs<CallExpr>(coop_function_call_s)->getDirectCallee();
     if(function_call){
@@ -112,27 +115,24 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called in a " ;
 
     Stmt const *loop;
-    char const *fileName;
+    bool is_in_user_file = false;
     bool isForLoop = true;
-    if(const ForStmt* forLoop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
-        loop = forLoop;
-        fileName = is_user_source_file(srcMgr.getFilename(forLoop->getForLoc()).str().c_str());
+    if(const ForStmt* for_loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
+        loop = for_loop;
+        is_in_user_file = get_for_loop_identifier(for_loop, &srcMgr, &ss);
         coop::logger::log_stream << "for";
-    }else if(const WhileStmt* whileLoop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
-        loop = whileLoop;
-        fileName = is_user_source_file(srcMgr.getFilename(whileLoop->getWhileLoc()).str().c_str());
+    }else if(const WhileStmt* while_loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
+        loop = while_loop;
+        is_in_user_file = get_while_loop_identifier(while_loop, &srcMgr, &ss);
         isForLoop = false;
         coop::logger::log_stream << "while";
     }
 
     //check if the loop occurs in a user file
-    if(!fileName){
+    if(!is_in_user_file){
         coop::logger::clear();
         return;
     }
-
-    std::stringstream ss;
-    ss << "[" << fileName << ":" << srcMgr.getPresumedLineNumber(loop->getLocStart()) << "]";
 
     coop::logger::log_stream << "Loop " << ss.str();
     coop::logger::out();
@@ -191,32 +191,76 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
 /*NestedLoopCallback*/
 void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
     SourceManager &srcMgr = result.Context->getSourceManager();
-
-    //find parent loop
-    {
-        std::stringstream ss;
-        if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_parent_for_loop_s)){
-            get_for_loop_identifier(for_loop_parent, &srcMgr, &ss);
-            coop::logger::log_stream << "found PARENT 'for loop' " << ss.str();
-        }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_parent_while_loop_s)){
-            get_while_loop_identifier(while_loop_parent, &srcMgr, &ss);
-            coop::logger::log_stream << "found PARENT 'while loop' " << ss.str();
-        }
-        coop::logger::log_stream << " parenting -> ";
-    }
+    std::stringstream ss;
+    Stmt const * parent_loop, *child_loop;
 
     //find child loop
-    {
-        std::stringstream ss;
-        if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
-            get_for_loop_identifier(for_loop_child, &srcMgr, &ss);
-            coop::logger::log_stream << "'for loop' " << ss.str();
-        }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
-            get_while_loop_identifier(while_loop_child, &srcMgr, &ss);
-            coop::logger::log_stream << "'while loop' " << ss.str();
-        }
+    if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)){
+        child_loop = for_loop_child;
+        get_for_loop_identifier(for_loop_child, &srcMgr, &ss);
+        coop::logger::log_stream << "found CHILD 'for loop' " << ss.str();
+    }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_child_while_loop_s)){
+        child_loop = while_loop_child;
+        get_while_loop_identifier(while_loop_child, &srcMgr, &ss);
+        coop::logger::log_stream << "found CHILD 'while loop' " << ss.str();
+    }
+    coop::logger::log_stream << " parented by -> ";
+
+    //match parent loop
+    ss.str("");
+    if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
+        parent_loop = for_loop_parent;
+        get_for_loop_identifier(for_loop_parent, &srcMgr, &ss);
+        coop::logger::log_stream << "'for loop' " << ss.str();
+    }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
+        parent_loop = while_loop_parent;
+        get_while_loop_identifier(while_loop_parent, &srcMgr, &ss);
+        coop::logger::log_stream << "'while loop' " << ss.str();
     }
     coop::logger::out();
+
+    NestedLoopCallback::parent_child_map[parent_loop].push_back(child_loop);
+}
+
+void coop::NestedLoopCallback::traverse_parents(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, std::vector<const Stmt*>*)> callback){
+    for(auto parent_childs : NestedLoopCallback::parent_child_map){
+        auto parent_iter = LoopMemberUsageCallback::loops.find(parent_childs.first);
+        if(parent_iter == LoopMemberUsageCallback::loops.end()){
+            continue;
+        }
+        std::vector<const Stmt*> *children = &parent_childs.second;
+
+        callback(&parent_iter, children);
+    }
+}
+void coop::NestedLoopCallback::traverse_parents_children(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, const Stmt* child)> callback){
+    traverse_parents([&](std::map<const clang::Stmt *, coop::loop_credentials>::iterator *p, std::vector<const Stmt*>* children){
+        for(auto c : *children){
+            callback(p, c);
+        }
+    });
+}
+
+void coop::NestedLoopCallback::print_data(){
+    coop::logger::out("Following 1-tier loop relations were found")++;
+    traverse_parents([](std::map<const clang::Stmt *, coop::loop_credentials>::iterator *parent_iter, std::vector<const Stmt*>* children){
+        auto parent_info = &(**parent_iter).second;
+
+        coop::logger::log_stream << "parent: " << parent_info->identifier;
+        coop::logger::out()++;
+        coop::logger::log_stream << "<";
+        for(auto c : *children){
+            auto child_iter = LoopMemberUsageCallback::loops.find(c);
+            if(child_iter == LoopMemberUsageCallback::loops.end()){
+                continue;
+            }
+            coop::loop_credentials *child_info = &(*child_iter).second;
+            coop::logger::log_stream << child_info->identifier << ", ";
+        }
+        coop::logger::log_stream << ">";
+        coop::logger::out()--;
+    });
+    coop::logger::depth--;
 }
 
 
@@ -296,11 +340,13 @@ namespace coop {
 
         StatementMatcher loops = anyOf(forStmt().bind(coop_loop_s), whileStmt().bind(coop_loop_s));
         StatementMatcher loops_distinct = anyOf(forStmt().bind(coop_for_loop_s), whileStmt().bind(coop_while_loop_s));
+        StatementMatcher loops_distinct_each = eachOf(forStmt().bind(coop_for_loop_s), whileStmt().bind(coop_while_loop_s));
         StatementMatcher function_calls_in_loops = callExpr(hasAncestor(loops)).bind(coop_function_call_s);
-        auto has_loop_descendant = hasDescendant(loops_distinct);
+
+        auto has_loop_ancestor = hasAncestor(loops_distinct_each);
         StatementMatcher nested_loops =
-            anyOf(forStmt(has_loop_descendant).bind(coop_parent_for_loop_s),
-                  whileStmt(has_loop_descendant).bind(coop_parent_while_loop_s));
+            eachOf(forStmt(has_loop_ancestor).bind(coop_child_for_loop_s),
+                  whileStmt(has_loop_ancestor).bind(coop_child_while_loop_s));
 
         StatementMatcher members_used_in_for_loops =
             memberExpr(hasAncestor(forStmt().bind(coop_loop_s))).bind(coop_member_s);

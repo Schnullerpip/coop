@@ -39,8 +39,8 @@ using namespace clang::ast_matchers;
 #define coop_while_loop_s "while_loop"
 
 #define coop_parent_loop_s "parent_loop"
-#define coop_parent_for_loop_s "parent_for_loop_s"
-#define coop_parent_while_loop_s "parent_while_loop_s"
+#define coop_child_for_loop_s "child_for_loop_s"
+#define coop_child_while_loop_s "child_while_loop_s"
 
 
 namespace coop{
@@ -64,8 +64,11 @@ namespace coop{
                 :user_source_files(user_source_files){}
         protected:
             const char* is_user_source_file(const char* file_path);
-            void get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream*);
-            void get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream*);
+
+            //returns true if the loop is in a user specified file
+            bool get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream*);
+            //returns true if the loop is in a user specified file
+            bool get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream*);
         private:
             const std::vector<const char*> *user_source_files;
             virtual void run(const MatchFinder::MatchResult &result) = 0;
@@ -151,8 +154,15 @@ namespace coop{
     public:
         //will cache the found nested loops and save a reference to the immediate parent
         //deeper nesting needs to be found by iterating over the child_parent_map
-        static std::map<const clang::Stmt*, const clang::Stmt*> parent_child_map;
+        //careful -> this is a matcherCallback so there wont be complete information during the run method
+        //we will later have to distinct which loops are even relevant to us (associate members directly/indirectly)
+        static std::map<const clang::Stmt*, std::vector<const clang::Stmt*>>
+            parent_child_map;
+
         NestedLoopCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+        void traverse_parents(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, std::vector<const Stmt*>*)> callback);
+        void traverse_parents_children(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, const Stmt* child)>);
+        void print_data();
     private:
         void run(const MatchFinder::MatchResult &result);
     };
@@ -207,9 +217,11 @@ namespace coop{
 
 
             //reference to the record node (class/struct) that is referred to by this struct
-            const clang::RecordDecl *record;
+            const clang::RecordDecl
+                *record;
             //reference to all the member nodes that the referred record has
-            std::vector<const clang::FieldDecl*> *fields;
+            std::vector<const clang::FieldDecl*>
+                *fields;
 
             //reference to the function-member mapping
             std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>>
@@ -243,6 +255,7 @@ namespace coop{
             void print_mat (data_matrix<T, P>* mat,
                 std::function<const char* (const T*)>& getName,
                 std::function<int (const T*)>& getIdx){
+                coop::logger::depth++;
                 for(auto f : *fields){
                     logger::log_stream << " " << f->getNameAsString().c_str() << "\t";
                 }
@@ -250,7 +263,9 @@ namespace coop{
                 for(auto t : *mat->relevant_instances){
                     logger::log_stream << "[";
                     for(size_t o = 0; o < fields->size(); ++o){
-                        logger::log_stream << mat->at(o, getIdx(t.first)) << "\t";
+                        float value_at = mat->at(o, getIdx(t.first));
+                        value_at == 0 ? logger::log_stream << " " : logger::log_stream << value_at;
+                        logger::log_stream << "\t";
                         if(o == fields->size()-1){
                             logger::log_stream << "] " << getName(t.first);
                             logger::out();
@@ -259,6 +274,7 @@ namespace coop{
                         }
                     }
                 }
+                coop::logger::depth--;
             }
         };
     }
@@ -275,7 +291,6 @@ namespace coop{
                 coop::logger::out(ss);
         }
     };
-
 }
 
 #endif
