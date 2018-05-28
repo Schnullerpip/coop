@@ -28,6 +28,24 @@ static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 
 //function heads
 void recursive_weighting(coop::record::record_info *rec_info, const Stmt* child_loop);
+void consider_indirect_memberusage_in_loop_functioncalls(
+	coop::LoopFunctionsCallback &loop_functions_callback,
+	coop::FunctionRegistrationCallback &member_usage_callback
+);
+void create_member_matrices(
+	coop::record::record_info *record_stats,
+	coop::MemberRegistrationCallback &member_registration_callback,
+	coop::FunctionRegistrationCallback &member_usage_callback,
+	coop::LoopFunctionsCallback &loop_functions_callback,
+	coop::NestedLoopCallback &nested_loop_callback
+);
+void fill_function_member_matrix(coop::record::record_info &rec_ref,
+		std::vector<const FieldDecl*> *fields,
+		coop::FunctionRegistrationCallback &member_usage_callback);
+void fill_loop_member_matrix(
+	std::vector<const FieldDecl*> *fields,
+	coop::record::record_info &rec_ref,
+	coop::LoopFunctionsCallback &loop_functions_callback);
 
 
 //main start
@@ -36,7 +54,6 @@ int main(int argc, const char **argv) {
 	//setup
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING);
 		extern int execution_state;
-		std::stringstream& log_stream = coop::logger::log_stream;
 
 		//registering all the user specified files
 		std::vector<const char*> user_files;
@@ -83,166 +100,23 @@ int main(int argc, const char **argv) {
 			new coop::record::record_info[member_registration_callback.class_fields_map.size()]();
 
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
+
 		//the loop_registration_callback contains all the loops that directly associate members
 		//loop_functions_callback contains all the loops, that call functions and therefore might indirectly associate members
 		//find out which loop_functions_callback's functions are missing and extend the loop_registration
-
-		//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
-		//get rid of those entries
-		for(auto fc : loop_functions_callback.loop_function_calls){
-			bool remove = true;
-			//for each function in that loop, check wether it is a relevant function
-			for(auto f : fc.second.funcs){
-				auto iter = member_usage_callback.relevant_functions.find(f);
-				if(iter != member_usage_callback.relevant_functions.end()){
-					//this function is relevant to us and therefore validates the loop to be relevant
-					remove = false;
-					break;
-				}
-			}
-			if(remove){
-				loop_functions_callback.loop_function_calls.erase(fc.first);
-			}else {
-				//since this loop is relevant to us - check wether it is registered yet
-				//if it doesnt directly associate members it wont be registered yet
-				auto iter = coop::LoopMemberUsageCallback::loops.find(fc.first);
-				if(iter == coop::LoopMemberUsageCallback::loops.end()){
-					//the relevant loop is NOT registered yet -> register it, by adding it to the list
-					coop::LoopMemberUsageCallback::loops.insert(std::pair<const Stmt*, coop::loop_credentials>(fc.first, fc.second));
-					//coop::LoopMemberUsageCallback::loops[fc.first].identifier = "TODO";
-					coop::LoopMemberUsageCallback::register_loop(fc.first);
-				}
-			}
-		}
+		consider_indirect_memberusage_in_loop_functioncalls(
+			loop_functions_callback,
+			member_usage_callback);
 
 		/*now we know the classes (and their members) and the functions as well as all the loops, that use those members
 		now for each class we need to pick their members inside the functions, to see which ones are related*/
-		int rec_count = 0;
-		for(auto cfm : member_registration_callback.class_fields_map){
-			const auto fields = &cfm.second;
-			const auto rec = cfm.first;
-			coop::record::record_info &rec_ref = record_stats[rec_count];
-			//initializing the info struct
-			rec_ref.init(rec, fields,
-				&member_usage_callback.relevant_functions,
-				&coop::LoopMemberUsageCallback::loops);
-			//iterate over each function to fill the function-member matrix of this record_info
-			{
-				for(auto func_mems : member_usage_callback.relevant_functions){
-					const FunctionDecl* func = func_mems.first;
-					std::vector<const MemberExpr*> *mems = &func_mems.second;
+		create_member_matrices(
+			record_stats,
+			member_registration_callback,
+			member_usage_callback,
+			loop_functions_callback,
+			nested_loop_callback);
 
-					int func_idx = member_usage_callback.function_idx_mapping[func];
-					//iterate over each member that function uses
-					for(auto mem : *mems){
-
-						log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
-							<< mem->getMemberDecl()->getNameAsString() << "' for record '" << rec->getNameAsString().c_str();
-
-						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
-						if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
-							log_stream << "' - yes";
-							rec_ref.fun_mem.at(rec_ref.member_idx_mapping[child], func_idx)++;
-						}else{
-							log_stream << "' - no";
-						}
-						coop::logger::out();
-					}
-				}
-			}
-			//iterate over each loop to fill the loop-member matrix of this record_info
-			{
-				auto loop_mems_map = &coop::LoopMemberUsageCallback::loops;
-				auto &loop_idxs = coop::LoopMemberUsageCallback::loop_idx_mapping;
-				for(auto loop_mems : *loop_mems_map){
-					auto loop = loop_mems.first;
-					auto loop_info = &coop::LoopMemberUsageCallback::loops[loop];
-					int loop_idx = loop_idxs[loop];
-					//iterate over each member that loop uses
-					for(auto mem : loop_mems.second.member_usages){
-
-						log_stream << "checking loop " << loop_info->identifier << " has member '"
-							<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec->getNameAsString().c_str();
-
-						const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
-						if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec){
-							log_stream << "' - yes";
-							rec_ref.loop_mem.at(rec_ref.member_idx_mapping[child], loop_idx)++;
-						}else{
-							log_stream << "' - no";
-						}
-						coop::logger::out();
-					}
-
-					/*now watch out! there can be member usage in a loop either by direct usage or inlined functions
-					  BUT there can also be implicit member usage in a loop by calling a function, that uses a member
-					  so we also need to consider all the functions, that are being called in a loop, and check, wether or
-					  not they use relevant members*/
-					coop::logger::depth++;
-					//iterate over all functions that are called inside this loops, if there are any
-					auto funcsIter = loop_functions_callback.loop_function_calls.find(loop_mems.first);
-					if( funcsIter != loop_functions_callback.loop_function_calls.end()){
-						auto loop_info = funcsIter->second;
-						//the loop has functioncalls - are the functioncalls relevant to us?
-						for(auto func : loop_info.funcs){
-							coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "' loop calls";
-							coop::logger::out()++;
-							//if the function declaration contains a relevant member it must be considered
-							if(std::vector<const MemberExpr*> *mems = rec_ref.isRelevantFunction(func)){
-								//the function is relevant -> iterate over its memberExpr and
-								//update the loop_member matrix accordingly
-								for(auto mem : *mems){
-									//but a function can reference members of different records, so make sure to
-									//only update the ones, that are relevant to us
-									int mem_idx = rec_ref.isRelevantField(mem);
-									if(mem_idx > -1){
-										//means field is indexed by this record -> we have a match!
-										//the field belongs to this record -> go update the matrix!
-										coop::logger::log_stream << "found '" << func->getNameAsString().c_str() << "' using '" 
-											<< mem->getMemberDecl()->getNameAsString().c_str() << "' inside the loop " <<
-												loop_info.identifier;
-										coop::logger::out();
-
-										rec_ref.loop_mem.at(mem_idx, loop_idx)++;
-									}
-								}
-							}
-							coop::logger::depth--;
-						}
-					}
-					coop::logger::depth--;
-				}
-				rec_count++;
-			}
-
-			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:";
-			coop::logger::out();
-			rec_ref.print_func_mem_mat(coop::FunctionRegistrationCallback::function_idx_mapping);
-			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:";
-			coop::logger::out();
-			rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
-
-			coop::logger::out("weighting nested loops", coop::logger::RUNNING)++;
-				nested_loop_callback.print_data();
-				//We should now have record_infos with valid information on which members are used by which function/loop
-				//we also have the information on which loop parents which other loops
-				//our approach will be to determine the loopdepth of each variable to approximate its 'weight' or 'usage frequency'
-				//and therefore it's importance to the performance of the program
-				//we can't reason about which loop is most important (probably), but we can take an educated guess by saying:
-				//"greater loopdepth means the chance of this field being used often is also greater"
-
-				nested_loop_callback.traverse_parents_children(
-					[&rec_ref](std::map<const clang::Stmt *, coop::loop_credentials>::iterator *p, const Stmt* child_loop){
-						recursive_weighting(&rec_ref, child_loop);
-					}
-				);
-				coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix after weighting:";
-				coop::logger::out();
-				rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
-
-			coop::logger::depth--;
-			coop::logger::out("weighting nested loops", coop::logger::TODO);
-		}
 		coop::logger::depth--;
 		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
 
@@ -270,6 +144,196 @@ int main(int argc, const char **argv) {
 
 	return execution_state;
 }
+
+void consider_indirect_memberusage_in_loop_functioncalls(
+	coop::LoopFunctionsCallback &loop_functions_callback,
+	coop::FunctionRegistrationCallback &member_usage_callback
+	){
+	//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
+	//get rid of those entries
+	for(auto fc : loop_functions_callback.loop_function_calls){
+		bool remove = true;
+		//for each function in that loop, check wether it is a relevant function
+		for(auto f : fc.second.funcs){
+			auto iter = member_usage_callback.relevant_functions.find(f);
+			if(iter != member_usage_callback.relevant_functions.end()){
+				//this function is relevant to us and therefore validates the loop to be relevant
+				remove = false;
+				break;
+			}
+		}
+		if(remove){
+			loop_functions_callback.loop_function_calls.erase(fc.first);
+		}else {
+			//since this loop is relevant to us - check wether it is registered yet
+			//if it doesnt directly associate members it wont be registered yet
+			auto iter = coop::LoopMemberUsageCallback::loops.find(fc.first);
+			if(iter == coop::LoopMemberUsageCallback::loops.end()){
+				//the relevant loop is NOT registered yet -> register it, by adding it to the list
+				coop::LoopMemberUsageCallback::loops.insert(std::pair<const Stmt*, coop::loop_credentials>(fc.first, fc.second));
+				//coop::LoopMemberUsageCallback::loops[fc.first].identifier = "TODO";
+				coop::LoopMemberUsageCallback::register_loop(fc.first);
+			}
+		}
+	}
+}
+
+void create_member_matrices(
+	coop::record::record_info *record_stats,
+	coop::MemberRegistrationCallback &member_registration_callback,
+	coop::FunctionRegistrationCallback &member_usage_callback,
+	coop::LoopFunctionsCallback &loop_functions_callback,
+	coop::NestedLoopCallback &nested_loop_callback
+	){
+
+	int rec_count = 0;
+	for(auto cfm : member_registration_callback.class_fields_map){
+		const auto fields = &cfm.second;
+		const auto rec = cfm.first;
+		coop::record::record_info &rec_ref = record_stats[rec_count];
+		//initializing the info struct
+		rec_ref.init(rec, fields,
+			&member_usage_callback.relevant_functions,
+			&coop::LoopMemberUsageCallback::loops);
+
+		//iterate over each function to fill the function-member matrix of this record_info
+		fill_function_member_matrix(
+			rec_ref,
+			fields,
+			member_usage_callback);
+
+		//iterate over each loop to fill the loop-member matrix of this record_info
+		fill_loop_member_matrix(fields,
+			rec_ref,
+			loop_functions_callback);
+
+		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:";
+		coop::logger::out();
+		rec_ref.print_func_mem_mat(coop::FunctionRegistrationCallback::function_idx_mapping);
+		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:";
+		coop::logger::out();
+		rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
+
+		coop::logger::out("weighting nested loops", coop::logger::RUNNING)++;
+			nested_loop_callback.print_data();
+			//We should now have record_infos with valid information on which members are used by which function/loop
+			//we also have the information on which loop parents which other loops
+			//our approach will be to determine the loopdepth of each variable to approximate its 'weight' or 'usage frequency'
+			//and therefore it's importance to the performance of the program
+			//we can't reason about which loop is most important (probably), but we can take an educated guess by saying:
+			//"greater loopdepth means the chance of this field being used often is also greater"
+
+			nested_loop_callback.traverse_parents_children(
+				[&rec_ref](std::map<const clang::Stmt *, coop::loop_credentials>::iterator *p, const Stmt* child_loop){
+					recursive_weighting(&rec_ref, child_loop);
+				}
+			);
+			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix after weighting:";
+			coop::logger::out();
+			rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
+
+		coop::logger::depth--;
+		coop::logger::out("weighting nested loops", coop::logger::TODO);
+		rec_count++;
+	}
+}
+
+//iterate over each function to fill the function-member matrix of a record_info
+void fill_function_member_matrix(coop::record::record_info &rec_ref,
+		std::vector<const FieldDecl*> *fields,
+		coop::FunctionRegistrationCallback &member_usage_callback){
+
+	for(auto func_mems : member_usage_callback.relevant_functions){
+		const FunctionDecl* func = func_mems.first;
+		std::vector<const MemberExpr*> *mems = &func_mems.second;
+
+		int func_idx = member_usage_callback.function_idx_mapping[func];
+		//iterate over each member that function uses
+		for(auto mem : *mems){
+
+			coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
+				<< mem->getMemberDecl()->getNameAsString() << "' for record '" << rec_ref.record->getNameAsString().c_str();
+
+			const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
+			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
+				coop::logger::log_stream << "' - yes";
+				rec_ref.fun_mem.at(rec_ref.member_idx_mapping[child], func_idx)++;
+			}else{
+				coop::logger::log_stream << "' - no";
+			}
+			coop::logger::out();
+		}
+	}
+}
+
+void fill_loop_member_matrix(
+	std::vector<const FieldDecl*> *fields,
+	coop::record::record_info &rec_ref,
+	coop::LoopFunctionsCallback &loop_functions_callback
+
+	){
+	auto loop_mems_map = &coop::LoopMemberUsageCallback::loops;
+	auto &loop_idxs = coop::LoopMemberUsageCallback::loop_idx_mapping;
+	for(auto loop_mems : *loop_mems_map){
+		auto loop = loop_mems.first;
+		auto loop_info = &coop::LoopMemberUsageCallback::loops[loop];
+		int loop_idx = loop_idxs[loop];
+		//iterate over each member that loop uses
+		for(auto mem : loop_mems.second.member_usages){
+
+			coop::logger::log_stream << "checking loop " << loop_info->identifier << " has member '"
+				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
+
+			const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
+			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
+				coop::logger::log_stream << "' - yes";
+				rec_ref.loop_mem.at(rec_ref.member_idx_mapping[child], loop_idx)++;
+			}else{
+				coop::logger::log_stream << "' - no";
+			}
+			coop::logger::out();
+		}
+
+		/*now watch out! there can be member usage in a loop either by direct usage or inlined functions
+			BUT there can also be implicit member usage in a loop by calling a function, that uses a member
+			so we also need to consider all the functions, that are being called in a loop, and check, wether or
+			not they use relevant members*/
+		coop::logger::depth++;
+		//iterate over all functions that are called inside this loops, if there are any
+		auto funcsIter = loop_functions_callback.loop_function_calls.find(loop_mems.first);
+		if( funcsIter != loop_functions_callback.loop_function_calls.end()){
+			auto loop_info = funcsIter->second;
+			//the loop has functioncalls - are the functioncalls relevant to us?
+			for(auto func : loop_info.funcs){
+				coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "' loop calls";
+				coop::logger::out()++;
+				//if the function declaration contains a relevant member it must be considered
+				if(std::vector<const MemberExpr*> *mems = rec_ref.isRelevantFunction(func)){
+					//the function is relevant -> iterate over its memberExpr and
+					//update the loop_member matrix accordingly
+					for(auto mem : *mems){
+						//but a function can reference members of different records, so make sure to
+						//only update the ones, that are relevant to us
+						int mem_idx = rec_ref.isRelevantField(mem);
+						if(mem_idx > -1){
+							//means field is indexed by this record -> we have a match!
+							//the field belongs to this record -> go update the matrix!
+							coop::logger::log_stream << "found '" << func->getNameAsString().c_str() << "' using '" 
+								<< mem->getMemberDecl()->getNameAsString().c_str() << "' inside the loop " <<
+									loop_info.identifier;
+							coop::logger::out();
+
+							rec_ref.loop_mem.at(mem_idx, loop_idx)++;
+						}
+					}
+				}
+				coop::logger::depth--;
+			}
+		}
+		coop::logger::depth--;
+	}
+}
+
 
 void recursive_weighting(coop::record::record_info *rec_ref, const Stmt* loop_stmt){
 	//if this child_loop is relevant to us (if it associates members)
