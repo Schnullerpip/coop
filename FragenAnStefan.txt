@@ -1,1 +1,0 @@
-1. ist es valide davon auszugehen, dass ich einfach auf loops prüfen kann?

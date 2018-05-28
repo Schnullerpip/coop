@@ -3,9 +3,11 @@
 3. create loop_member matrices for each record
 	|_dereference each loop and count members (inner-outer loops will be shown separately)[DONE]
 	|_dereference loop_functioncalls (step 2.) using the already made member_matrices and add to the count[DONE]
-	|_check each loop against each other one and find nested loops -> increase member count of nested loops by some factor
+	|_check each loop against each other one and find nested loops -> increase member count of nested loops by some factor[DONE]
+	|_get all functions, that have loops -> nesting of loops can be hidden with e.g. a loop itereating a function call, that includes running a loop
+		find those functions and include their loops in the check for nested loops
 
 4. now we have each 'loop using member x how many times' considering nested loops
-5. favorable pairings are already encoded in the loop_member matrix -> possible related members appear in same loop
+5. favorable pairings are already encoded in the loop_member matrix -> possible rlated members appear in same loop
 	|_possible conflicts A&B; B&C; but A !& C -> any good solution?
 6. apply changes

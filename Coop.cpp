@@ -1,6 +1,7 @@
 //custom includes
 #include "SystemStateInformation.hpp"
 #include "coop_utils.hpp"
+#include "MatchCallbacks.hpp"
 //custom needed
 #include "clang/AST/DeclCXX.h"
 
@@ -216,10 +217,10 @@ int main(int argc, const char **argv) {
 
 			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:";
 			coop::logger::out();
-			rec_ref.print_func_mem_mat();
+			rec_ref.print_func_mem_mat(coop::FunctionRegistrationCallback::function_idx_mapping);
 			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:";
 			coop::logger::out();
-			rec_ref.print_loop_mem_mat();
+			rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 
 			coop::logger::out("weighting nested loops", coop::logger::RUNNING)++;
 				nested_loop_callback.print_data();
@@ -237,7 +238,7 @@ int main(int argc, const char **argv) {
 				);
 				coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix after weighting:";
 				coop::logger::out();
-				rec_ref.print_loop_mem_mat();
+				rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 
 			coop::logger::depth--;
 			coop::logger::out("weighting nested loops", coop::logger::TODO);
