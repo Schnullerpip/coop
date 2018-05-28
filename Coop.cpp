@@ -50,7 +50,6 @@ void fill_loop_member_matrix(
 
 //main start
 int main(int argc, const char **argv) {
-
 	//setup
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING);
 		extern int execution_state;
@@ -141,6 +140,12 @@ int main(int argc, const char **argv) {
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
 	delete[] record_stats;
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
+
+/*TODO testing*/
+	coop::system::cache_credentials cc = get_d_cache_info(0);
+	coop::logger::log_stream << "cache: " << cc.lvl << " size: " << cc.size << " lineSize: " << cc.line_size;
+	coop::logger::out();
+/*TODO testing*/
 
 	return execution_state;
 }
