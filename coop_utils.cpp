@@ -15,10 +15,10 @@ void coop::record::record_info::init(
     {
 
     record = class_struct;
-    fields = field_vector;
+    fields = *field_vector;
 
-    fun_mem.init(fields->size(), rlvnt_funcs);
-    loop_mem.init(fields->size(), rlvnt_loops);
+    fun_mem.init(fields.size(), rlvnt_funcs);
+    loop_mem.init(fields.size(), rlvnt_loops);
 
     relevant_functions = rlvnt_funcs;
     relevant_loops = rlvnt_loops;
@@ -27,7 +27,7 @@ void coop::record::record_info::init(
     //since a function can mention the same member several times, we need to make sure each
     //iteration over the same member associates with the same adress in the matrix (has the same index)
     int index_count = 0;
-    for(auto f : *fields){
+    for(auto f : fields){
             member_idx_mapping[f] = index_count++;
     }
 }
@@ -42,7 +42,7 @@ std::vector<const MemberExpr*>* coop::record::record_info::isRelevantFunction(co
 
 int coop::record::record_info::isRelevantField(const MemberExpr* memExpr){
     const FieldDecl* field = static_cast<const FieldDecl*>(memExpr->getMemberDecl());
-    if(std::find(fields->begin(), fields->end(), field) != fields->end()){
+    if(std::find(fields.begin(), fields.end(), field) != fields.end()){
         return member_idx_mapping[field];
     }
     return -1;

@@ -94,7 +94,14 @@ int main(int argc, const char **argv) {
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
 
 		//run the matchers/callbacks
-		Tool.run(newFrontendActionFactory(&data_aggregation).get());
+		std::vector<std::unique_ptr<ASTUnit>> ASTs;
+		Tool.buildASTs(ASTs);
+		for(unsigned i = 0; i < ASTs.size(); ++i){
+			data_aggregation.matchAST(ASTs[i]->getASTContext());
+		}
+
+		//auto front_end_action = newFrontendActionFactory(&data_aggregation).get();
+		//Tool.run(front_end_action);
 
 		//print out the found records (classes/structs) and their fields
 		member_registration_callback.printData();
@@ -102,9 +109,11 @@ int main(int argc, const char **argv) {
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::DONE);
 
 	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
+		const int num_records = member_registration_callback.class_fields_map.size();
+
 		//creating record_info for each record
 		coop::record::record_info *record_stats =
-			new coop::record::record_info[member_registration_callback.class_fields_map.size()]();
+			new coop::record::record_info[num_records]();
 
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
 
@@ -129,24 +138,45 @@ int main(int argc, const char **argv) {
 
 	coop::logger::out("determining which members are logically related", coop::logger::DONE);
 
-	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::RUNNING);
+	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::RUNNING)++;
 	//now that we have a matrix for each record, that tells us which of its members are used in which function how many times,
 	//we can take a heuristic and prioritize pairings
 	//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
+	float *record_field_weight_average = new float[num_records]();
 
+	for(int i = 0; i < num_records; ++i){
+		coop::record::record_info &rec = record_stats[i];
+		float average = 0;
+
+		//each record may have several fields - iterate them
+		int num_fields = rec.member_idx_mapping.size();
+		for(auto fi : rec.member_idx_mapping){
+			int field_idx = fi.second;
+			//add up the column of the weighted loop_mem map 
+			for(unsigned y = 0; y < rec.relevant_loops->size(); ++y){
+				average += rec.loop_mem.at(field_idx, y);
+			}
+		}
+
+		record_field_weight_average[i] = average = average/num_fields;
+		coop::logger::log_stream << "record " << rec.record->getNameAsString().c_str() << "'s field weight average = " << average;
+		coop::logger::out();
+	}
+
+	//with the field weight averages (FWAs) we can now narrow down on which members are hot and cold
+	//hot members will stay inside the class definition
+	//cold members will be transferred to a struct, that defines those members as part of it and a
+	//reference to an instance of said struct will be placed in the original record's definition
+
+	coop::logger::depth--;
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
 
-	coop::logger::out("applying changes to AST", coop::logger::RUNNING);
+	coop::logger::out("applying changes to source files", coop::logger::RUNNING);
 	//TODO: apply measurements respectively, to make the target program more cachefriendly
-	coop::logger::out("applying changes to AST", coop::logger::TODO);
-
-	coop::logger::out("creating Intermediate Representation (IR)", coop::logger::RUNNING);
-	coop::logger::out("creating Intermediate Representation (IR)", coop::logger::TODO);
-
-	coop::logger::out("creating executable", coop::logger::RUNNING);
-	coop::logger::out("creating executable", coop::logger::TODO);
+	coop::logger::out("applying changes to source files", coop::logger::TODO);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
+	delete[] record_field_weight_average;
 	delete[] record_stats;
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
 
@@ -204,6 +234,7 @@ void create_member_matrices(
 		rec_ref.init(rec, fields,
 			&member_usage_callback.relevant_functions,
 			&coop::LoopMemberUsageCallback::loops);
+
 
 		//iterate over each function to fill the function-member matrix of this record_info
 		fill_function_member_matrix(
@@ -350,7 +381,7 @@ void recursive_weighting(coop::record::record_info *rec_ref, const Stmt* loop_st
 	if(loop_idx_iter != coop::LoopMemberUsageCallback::loop_idx_mapping.end()){
 		int loop_idx = (*loop_idx_iter).second;
 		//update the current record's member usage statistic
-		for(unsigned i = 0; i < rec_ref->fields->size(); ++i){
+		for(unsigned i = 0; i < rec_ref->fields.size(); ++i){
 			//since this IS  a nested loop (child loop) we can ass some arbitrary factor to the members'weights
 			rec_ref->loop_mem.at(i, loop_idx) *= 10;
 		}

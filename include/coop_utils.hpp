@@ -134,7 +134,7 @@ namespace coop{
                 *record;
             //reference to all the member nodes that the referred record has
             std::vector<const clang::FieldDecl*>
-                *fields;
+                fields;
 
             //reference to the function-member mapping
             std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>>
@@ -172,17 +172,17 @@ namespace coop{
                 std::function<const char* (const T*)>& getName,
                 std::function<int (const T*)>& getIdx){
                 coop::logger::depth++;
-                for(auto f : *fields){
+                for(auto f : fields){
                     logger::log_stream << " " << f->getNameAsString().c_str() << "\t";
                 }
                 logger::out();
                 for(auto t : *mat->relevant_instances){
                     logger::log_stream << "[";
-                    for(size_t o = 0; o < fields->size(); ++o){
+                    for(size_t o = 0; o < fields.size(); ++o){
                         float value_at = mat->at(o, getIdx(t.first));
                         value_at == 0 ? logger::log_stream << " " : logger::log_stream << value_at;
                         logger::log_stream << "\t";
-                        if(o == fields->size()-1){
+                        if(o == fields.size()-1){
                             logger::log_stream << "] " << getName(t.first);
                             logger::out();
                         }else{
