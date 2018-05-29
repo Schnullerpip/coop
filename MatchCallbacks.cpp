@@ -58,7 +58,9 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
 
     SourceManager &srcMgr = result.Context->getSourceManager();
     if(is_user_source_file(srcMgr.getFilename(rd->getLocation()).str().c_str())){
-        coop::logger::log_stream << "found '" << member->getNameAsString().c_str() << "' in record '" << rd->getNameAsString().c_str() << "'";
+        coop::logger::log_stream << "found '" << member->getNameAsString().c_str()
+            << "'(" << coop::get_sizeof_in_bits(member) << " bit) in record '"
+            << rd->getNameAsString().c_str() << "'" ;
         coop::logger::out();
         class_fields_map[rd].push_back(member);
     }

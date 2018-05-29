@@ -1,6 +1,10 @@
 #include "coop_utils.hpp"
+#include "llvm-c/TargetMachine.h"
 
 
+int coop::get_sizeof_in_bits(const FieldDecl* field){
+    return field->getASTContext().getTypeSize(field->getType());
+}
 
 
 void coop::record::record_info::init(

@@ -1,6 +1,6 @@
 //custom includes
-#include "SystemStateInformation.hpp"
 #include "coop_utils.hpp"
+#include "SystemStateInformation.hpp"
 #include "MatchCallbacks.hpp"
 //custom needed
 #include "clang/AST/DeclCXX.h"
@@ -51,9 +51,16 @@ void fill_loop_member_matrix(
 //main start
 int main(int argc, const char **argv) {
 	//setup
-	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING);
-		extern int execution_state;
-
+	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING)++;
+	coop::system::cache_credentials cc;
+		coop::logger::out("retreiving system information", coop::logger::RUNNING)++;
+			cc = coop::system::get_d_cache_info(coop::system::IDX_0);
+			coop::logger::log_stream
+				<< "for cache lvl: " << cc.lvl
+				<< " size: " << cc.size
+				<< "KB lineSize: " << cc.line_size << "B";
+			coop::logger::out()--;
+		coop::logger::out("retreiving system information", coop::logger::DONE);
 		//registering all the user specified files
 		std::vector<const char*> user_files;
 		for(int i = 1; i < argc; ++i){
@@ -81,12 +88,13 @@ int main(int argc, const char **argv) {
 		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_member_usages_callback);
 		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_member_usages_callback);
 		data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
+	coop::logger::depth--;
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
 
 		//run the matchers/callbacks
-		execution_state = Tool.run(newFrontendActionFactory(&data_aggregation).get());
+		Tool.run(newFrontendActionFactory(&data_aggregation).get());
 
 		//print out the found records (classes/structs) and their fields
 		member_registration_callback.printData();
@@ -125,6 +133,7 @@ int main(int argc, const char **argv) {
 	//now that we have a matrix for each record, that tells us which of its members are used in which function how many times,
 	//we can take a heuristic and prioritize pairings
 	//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
+
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
 
 	coop::logger::out("applying changes to AST", coop::logger::RUNNING);
@@ -141,13 +150,8 @@ int main(int argc, const char **argv) {
 	delete[] record_stats;
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
 
-/*TODO testing*/
-	coop::system::cache_credentials cc = get_d_cache_info(0);
-	coop::logger::log_stream << "cache: " << cc.lvl << " size: " << cc.size << " lineSize: " << cc.line_size;
-	coop::logger::out();
-/*TODO testing*/
 
-	return execution_state;
+	return 0;
 }
 
 void consider_indirect_memberusage_in_loop_functioncalls(

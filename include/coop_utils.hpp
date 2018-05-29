@@ -45,6 +45,10 @@ using namespace clang::ast_matchers;
 
 namespace coop{
 
+    //will return the sizeof value for a field in Bits
+    int get_sizeof_in_bits(const FieldDecl* field);
+
+
     namespace match {
         extern DeclarationMatcher classes;
 		extern DeclarationMatcher members;
