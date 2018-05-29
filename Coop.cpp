@@ -11,8 +11,6 @@ using namespace llvm;
 using namespace clang;
 using namespace clang::ast_matchers;
 
-
-
 // -------------- GENERAL STUFF ----------------------------------------------------------
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
@@ -139,46 +137,52 @@ int main(int argc, const char **argv) {
 	coop::logger::out("determining which members are logically related", coop::logger::DONE);
 
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::RUNNING)++;
-	//now that we have a matrix for each record, that tells us which of its members are used in which function how many times,
-	//we can take a heuristic and prioritize pairings
-	//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
-	float *record_field_weight_average = new float[num_records]();
 
-	for(int i = 0; i < num_records; ++i){
-		coop::record::record_info &rec = record_stats[i];
-		float average = 0;
+		//now that we have a matrix for each record, that tells us which of its members are used in which function how many times,
+		//we can take a heuristic and prioritize pairings
+		//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
+		float *record_field_weight_average = new float[num_records]();
 
-		//each record may have several fields - iterate them
-		int num_fields = rec.member_idx_mapping.size();
-		for(auto fi : rec.member_idx_mapping){
-			int field_idx = fi.second;
-			//add up the column of the weighted loop_mem map 
-			for(unsigned y = 0; y < rec.relevant_loops->size(); ++y){
-				average += rec.loop_mem.at(field_idx, y);
+		for(int i = 0; i < num_records; ++i){
+			coop::record::record_info &rec = record_stats[i];
+			float average = 0;
+
+			//each record may have several fields - iterate them
+			int num_fields = rec.member_idx_mapping.size();
+			for(auto fi : rec.member_idx_mapping){
+				int field_idx = fi.second;
+				//add up the column of the weighted loop_mem map 
+				for(unsigned y = 0; y < rec.relevant_loops->size(); ++y){
+					average += rec.loop_mem.at(field_idx, y);
+				}
 			}
+
+			record_field_weight_average[i] = average = average/num_fields;
+
+			coop::logger::log_stream
+				<< "record " << rec.record->getNameAsString().c_str()
+				<< "'s field weight average = " << average;
+			coop::logger::out();
 		}
 
-		record_field_weight_average[i] = average = average/num_fields;
-		coop::logger::log_stream << "record " << rec.record->getNameAsString().c_str() << "'s field weight average = " << average;
-		coop::logger::out();
-	}
+		//with the field weight averages (FWAs) we can now narrow down on which members are hot and cold
+		//hot members will stay inside the class definition
+		//cold members will be transferred to a struct, that defines those members as part of it and a
+		//reference to an instance of said struct will be placed in the original record's definition
 
-	//with the field weight averages (FWAs) we can now narrow down on which members are hot and cold
-	//hot members will stay inside the class definition
-	//cold members will be transferred to a struct, that defines those members as part of it and a
-	//reference to an instance of said struct will be placed in the original record's definition
-
-	coop::logger::depth--;
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
 
 	coop::logger::out("applying changes to source files", coop::logger::RUNNING);
-	//TODO: apply measurements respectively, to make the target program more cachefriendly
+		//TODO: apply measurements respectively, to make the target program more cachefriendly
 	coop::logger::out("applying changes to source files", coop::logger::TODO);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
-	delete[] record_field_weight_average;
-	delete[] record_stats;
+		delete[] record_field_weight_average;
+		delete[] record_stats;
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
+
+
+
 
 
 	return 0;
@@ -292,7 +296,7 @@ void fill_function_member_matrix(coop::record::record_info &rec_ref,
 		for(auto mem : *mems){
 
 			coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
-				<< mem->getMemberDecl()->getNameAsString() << "' for record '" << rec_ref.record->getNameAsString().c_str();
+				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
 			const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
