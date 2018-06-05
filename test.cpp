@@ -9,6 +9,7 @@ public:
 class C {
 public:
 	int m_d;
+	A a_obj;
 	void foo(int& a, A& aa){
 		int bleo = 12 + a;
 		a += 1 + bleo;
@@ -33,6 +34,7 @@ void foob(A& a, C& c){
 			a.m_c[0]++;
 			for(;;){
 				c.m_d++;
+				c.a_obj.m_a = 1;
 			}
 			for(;;){
 				a.m_a++;

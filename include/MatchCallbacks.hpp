@@ -80,6 +80,7 @@ namespace coop {
             loop_idx_mapping;
 
         static void register_loop(const clang::Stmt* loop);
+        static bool is_registered(const clang::Stmt* loop);
 
         LoopMemberUsageCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
    private:

@@ -5,6 +5,9 @@
 int coop::get_sizeof_in_bits(const FieldDecl* field){
     return field->getASTContext().getTypeSize(field->getType());
 }
+int coop::get_sizeof_in_byte(const FieldDecl* field){
+    return get_sizeof_in_bits(field)/8;
+}
 
 
 void coop::record::record_info::init(

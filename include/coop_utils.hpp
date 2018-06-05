@@ -47,6 +47,8 @@ namespace coop{
 
     //will return the sizeof value for a field in Bits
     int get_sizeof_in_bits(const FieldDecl* field);
+    //will return the sizeof value for a field in Byte
+    int get_sizeof_in_byte(const FieldDecl* field);
 
 
     namespace match {

@@ -149,9 +149,11 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
 }
 
 /*LoopMemberUsageCallback*/
-
+bool coop::LoopMemberUsageCallback::is_registered(const clang::Stmt* loop){
+    return loop_idx_mapping.count(loop) != 0;
+}
 void coop::LoopMemberUsageCallback::register_loop(const clang::Stmt* loop){
-    if(loop_idx_mapping.count(loop) == 0){
+    if(!coop::LoopMemberUsageCallback::is_registered(loop)){
         //loop is not yet registered
         static int loop_count = 0;
         loop_idx_mapping[loop] = loop_count++;
@@ -195,6 +197,8 @@ void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
     SourceManager &srcMgr = result.Context->getSourceManager();
     std::stringstream ss;
     Stmt const * parent_loop, *child_loop;
+
+    //TODO determine wether or not this loop is inside a user file
 
     //find child loop
     if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)){
