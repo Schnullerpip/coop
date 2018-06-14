@@ -14,6 +14,7 @@ using namespace clang;
 using namespace clang::ast_matchers;
 
 #define coop_hot_split_tolerance_f .17f
+#define coop_standard_cold_data_allocation_size 1024
 
 // -------------- GENERAL STUFF ----------------------------------------------------------
 // Apply a custom category to all command-line options so that they are the
@@ -69,7 +70,7 @@ int main(int argc, const char **argv) {
 		//registering all the user specified files
 		std::vector<const char*> user_files;
 		for(int i = 1; i < argc; ++i){
-			if(!strcmp(argv[i], "--"))
+			if(strcmp(argv[i], "--") == 0)
 				break;
 			coop::logger::log_stream << "adding " << argv[i] << " to user source files";
 			coop::logger::out();
@@ -238,7 +239,7 @@ int main(int argc, const char **argv) {
 				}
 
 				//create a struct that holds all the field-declarations for the cold fields
-				coop::src_mod::create_cold_struct_for(&rec, &cpr, &rewriter);
+				coop::src_mod::create_cold_struct_for(&rec, &cpr, coop_standard_cold_data_allocation_size, &rewriter);
 
 				//give the record a reference to an instance of this new cold_data_struct
 				coop::src_mod::add_cpr_ref_to(&rec, cpr.name.c_str(), &rewriter);
@@ -246,8 +247,6 @@ int main(int argc, const char **argv) {
 				//change all appearances of the cold data fields to be referenced by the record's instance
 					//TODO
 
-				//instantiate the cold data struct -> probably as an array
-					//TODO
 			}
 
 		}

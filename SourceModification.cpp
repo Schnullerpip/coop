@@ -23,7 +23,7 @@ namespace coop{
             rewriter->ReplaceText(fd->getLocStart(), 0, "//");
         }
 
-        void create_cold_struct_for(coop::record::record_info *ri, cold_pod_representation *cpr, Rewriter *rewriter){
+        void create_cold_struct_for(coop::record::record_info *ri, cold_pod_representation *cpr, size_t size, Rewriter *rewriter){
             const RecordDecl* rd = ri->record;
             std::stringstream ss;
 
@@ -41,7 +41,7 @@ namespace coop{
                 ss << "\n" << get_field_declaration_text(field) << ";";
             }
 
-            ss << "\n};\n";
+            ss << "\n} " << cpr->record_i->record->getNameAsString().c_str() << "_cold_data" << "[" << size << "]" << ";\n";
 
             ASTContext &ast_context = rd->getASTContext();
             rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
@@ -53,7 +53,7 @@ namespace coop{
             rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
 
             std::stringstream ss;
-            ss << name << " cold_data_ptr;" << " //pointer to the cold_data struct that holds this reference's cold data\n";
+            ss << "//pointer to the cold_data struct that holds this reference's cold data\n"<< name  << " cold_data_ptr;\n" ;
             //this function will only be called if ri->cold_field_idx is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
             rewriter->InsertTextBefore(ri->cold_field_idx[0]->getLocStart(), ss.str());

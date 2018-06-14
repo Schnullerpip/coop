@@ -6,7 +6,6 @@ public:
 	short m_c[2];
 };
 
-
 struct coop_cold_data_struct_C {
 };
 class C {

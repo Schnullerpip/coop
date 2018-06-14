@@ -6,13 +6,14 @@
 
 namespace coop {
     namespace src_mod {
+
         struct cold_pod_representation{
             std::string name;
             coop::record::record_info *record_i = nullptr;
         };
 
         void remove_decl(const clang::FieldDecl *fd, Rewriter *rewriter);
-        void create_cold_struct_for(coop::record::record_info*, cold_pod_representation*, Rewriter*);
+        void create_cold_struct_for(coop::record::record_info*, cold_pod_representation*, size_t allocation_size, Rewriter*);
         void add_cpr_ref_to(coop::record::record_info*, const char*, Rewriter*);
     }
 }
