@@ -4,12 +4,49 @@
 #include "MatchCallbacks.hpp"
 //custom needed
 #include "clang/AST/DeclCXX.h"
+#include "clang/Rewrite/Core/Rewriter.h"
 
 using namespace clang::tooling;
 using namespace llvm;
 
 using namespace clang;
 using namespace clang::ast_matchers;
+
+#define coop_hot_split_tolerance_f .17f
+
+//test TODO DELETE THIS CLASS!!!!!!!!!!!!!!!!!!!!!!!!!!!1!
+class RewriterTest : public MatchFinder::MatchCallback {
+	public:
+		Rewriter &rewriter;
+
+		RewriterTest(Rewriter &r):rewriter(r){}
+
+		virtual void run(const MatchFinder::MatchResult &result){
+			const FieldDecl* rd = result.Nodes.getNodeAs<FieldDecl>(coop_member_s);
+			if(rd){
+				rewriter.setSourceMgr(rd->getASTContext().getSourceManager(), rd->getASTContext().getLangOpts());
+				llvm::outs() << rd->getNameAsString() << "'s loc is: " << rd->getLocation().printToString(rewriter.getSourceMgr()) << "\n" 
+					<< "its locStart is: " << rd->getLocStart().printToString(rewriter.getSourceMgr()) << "\n"
+					<< "its locEnd is: " << rd->getLocEnd().printToString(rewriter.getSourceMgr()) << "\n"
+					<< "its innerLocStart is: " << rd->getInnerLocStart().printToString(rewriter.getSourceMgr()) << "\n"
+					<< "its outerLocStart is: " << rd->getOuterLocStart().printToString(rewriter.getSourceMgr()) << "\n";
+
+				SourceManager & src_man = rewriter.getSourceMgr();
+				unsigned column_start = src_man.getPresumedColumnNumber(rd->getLocation());
+				unsigned column_end = src_man.getPresumedColumnNumber(rd->getLocEnd());
+
+				llvm::outs() << "loc start/end: " << column_start << " / " << column_end;
+
+				coop::src_mod::remove_decl(rd, &rewriter);
+
+				//if(strcmp(rd->getNameAsString().c_str(), "julian") == 0){
+				//	rewriter.ReplaceText(rd->getLocStart(), 0, "//");
+				//}else{
+				//	rewriter.ReplaceText(rd->getLocStart(), 0, "//");
+				//}
+			}
+		}
+};
 
 // -------------- GENERAL STUFF ----------------------------------------------------------
 // Apply a custom category to all command-line options so that they are the
@@ -48,6 +85,7 @@ void fill_loop_member_matrix(
 	coop::LoopFunctionsCallback &loop_functions_callback);
 
 
+Rewriter rewriter;
 //main start
 int main(int argc, const char **argv) {
 	//setup
@@ -82,12 +120,17 @@ int main(int argc, const char **argv) {
 		coop::LoopMemberUsageCallback while_loop_member_usages_callback(&user_files);
 		coop::NestedLoopCallback nested_loop_callback(&user_files);
 
+		RewriterTest rwt(rewriter);
+		data_aggregation.addMatcher(fieldDecl(hasName("julian")).bind(coop_member_s), &rwt);
+		data_aggregation.addMatcher(fieldDecl(hasName("aloha")).bind(coop_member_s), &rwt);
+
+
 		data_aggregation.addMatcher(coop::match::members, &member_registration_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
-		data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_member_usages_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_member_usages_callback);
-		data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
+		//data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
+		//data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
+		//data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_member_usages_callback);
+		//data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_member_usages_callback);
+		//data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
 	coop::logger::depth--;
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
@@ -151,13 +194,19 @@ int main(int argc, const char **argv) {
 			float average = 0;
 
 			//each record may have several fields - iterate them
-			int num_fields = rec.member_idx_mapping.size();
-			for(auto fi : rec.member_idx_mapping){
+			int num_fields = rec.field_idx_mapping.size();
+			for(auto fi : rec.field_idx_mapping){
 				int field_idx = fi.second;
 				//add up the column of the weighted loop_mem map 
+				float accumulated_field_weight = 0;
 				for(unsigned y = 0; y < rec.relevant_loops->size(); ++y){
-					average += rec.loop_mem.at(field_idx, y);
+					accumulated_field_weight += rec.loop_mem.at(field_idx, y);
 				}
+				rec.field_weights[field_idx].second = accumulated_field_weight;
+				average += accumulated_field_weight;
+
+				coop::logger::log_stream << fi.first->getNameAsString().c_str() << "'s field weight is: " << rec.field_weights[field_idx].second;
+				coop::logger::out();
 			}
 
 			record_field_weight_average[i] = average = average/num_fields;
@@ -166,31 +215,50 @@ int main(int argc, const char **argv) {
 				<< "record " << rec.record->getNameAsString().c_str()
 				<< "'s field weight average = " << average;
 			coop::logger::out();
+        
+			/*with the field weight averages (FWAs) we can now narrow down on which members are hot and cold (presumably)
+			we also now know which fields are logically linked (loop/member matrix)
+				-> which fields show temporal locality
+					-> fields appearing in the same rows are logically linked
+			hot members will stay inside the class definition
+			cold members will be transferred to a struct, that defines those members as part of it and a
+			reference to an instance of said struct will be placed in the original record's definition
+
+			several cases need to be considered:
+				-> one hot field not linked to any other fields -> 'special snowflake'
+					-> should EVERYTHING else be externalized to the cold struct?
+				-> several hot, logically linked field tuples -> this actually shows a lack of coherency and could/should be communicated as a possible designflaw -> can/should I fix this?
+				-> cold data that has temporal linkage to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
+					'a' should probably just be handled locally (LHS - principle) but is this the purpose of this optimization?
+				-> everything is hot/cold -> basically nothing to hot/cold split -> AOSOA should be applied
+				-> 
+			
+			what about weightings in general? Should they only be regarded relatively to each other,
+			or should I declare constant weight levels, that indicate wether or not data is hot/cold?
+			*/
+
+			//now determine the record's hot/cold fields
+			//the record's field_weights is now ordered (descending) so the moment we find a cold value
+			//the following  values will also be cold
+			coop::logger::depth++;
+			float tolerant_average = average * (1-coop_hot_split_tolerance_f);
+			coop::logger::log_stream << rec.record->getNameAsString().c_str() << "'s tolerant average is: " << tolerant_average;
+			coop::logger::out();
+			for(auto f_w : rec.field_weights){
+				coop::logger::log_stream << f_w.first->getNameAsString().c_str() << " is a ";
+				if(f_w.second < tolerant_average){
+					rec.cold_field_idx.push_back(f_w.first);
+					coop::logger::log_stream << "cold ";
+				}else{
+					coop::logger::log_stream << "hot ";
+				}
+				coop::logger::log_stream << "field!";
+				coop::logger::out();
+			}
+			coop::logger::depth--;
 		}
 
-		/*with the field weight averages (FWAs) we can now narrow down on which members are hot and cold (presumably)
-		we also now know which fields are logically linked (loop/member matrix)
-			-> which fields show temporal locality
-				-> fields appearing in the same rows are logically linked
-		hot members will stay inside the class definition
-		cold members will be transferred to a struct, that defines those members as part of it and a
-		reference to an instance of said struct will be placed in the original record's definition
 
-		several cases need to be considered:
-			-> one hot field not linked to any other fields -> 'special snowflake'
-				-> should EVERYTHING else be externalized to the cold struct?
-			-> several hot, logically linked field tuples -> this actually shows a lack of coherency and could/should be communicated as a possible designflaw -> can/should I fix this?
-			-> cold data that has temporal linkage to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
-				'a' should probably just be handled locally (LHS - principle) but is this the purpose of this optimization?
-			-> everything is hot/cold -> basically nothing to hot/cold split -> AOSOA should be applied
-			-> 
-		
-		what about weightings in general? Should they only be regarded relatively to each other,
-		or should I declare constant weight levels, that indicate wether or not data is hot/cold?
-		*/
-
-
-		
 	coop::logger::depth--;
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
 
@@ -203,6 +271,8 @@ int main(int argc, const char **argv) {
 		delete[] record_stats;
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
 
+	rewriter.overwriteChangedFiles();
+
 	return 0;
 }
 
@@ -211,7 +281,7 @@ void register_indirect_memberusage_in_loop_functioncalls(
 	coop::FunctionRegistrationCallback &member_usage_callback)
 {
 	//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
-	//get rid of those entries
+	//get rid of those entries 
 	for(auto fc : loop_functions_callback.loop_function_calls){
 		bool remove = true;
 		//for each function in that loop, check wether it is a relevant function
@@ -280,8 +350,6 @@ void create_member_matrices(
 					for(auto c : loop_children.second){
 						if(c == parent){
 							//this parent appears in another loop's childrens list - it will be handled by recursion implicitly
-							coop::logger::log_stream << "ignoring " << coop::LoopMemberUsageCallback::loops[parent].identifier << " for now";
-							coop::logger::out();
 							is_top_level = false;
 							break;
 						}
@@ -350,7 +418,7 @@ void fill_function_member_matrix(coop::record::record_info &rec_ref,
 			const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
 				coop::logger::log_stream << "' - yes";
-				rec_ref.fun_mem.at(rec_ref.member_idx_mapping[child], func_idx)++;
+				rec_ref.fun_mem.at(rec_ref.field_idx_mapping[child], func_idx)++;
 			}else{
 				coop::logger::log_stream << "' - no";
 			}
@@ -379,7 +447,7 @@ void fill_loop_member_matrix(
 			const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
 				coop::logger::log_stream << "' - yes";
-				rec_ref.loop_mem.at(rec_ref.member_idx_mapping[child], loop_idx)++;
+				rec_ref.loop_mem.at(rec_ref.field_idx_mapping[child], loop_idx)++;
 			}else{
 				coop::logger::log_stream << "' - no";
 			}

@@ -9,6 +9,18 @@ int coop::get_sizeof_in_byte(const FieldDecl* field){
     return get_sizeof_in_bits(field)/8;
 }
 
+namespace coop{
+    namespace src_mod{
+        void remove_decl(const clang::FieldDecl *fd, Rewriter *rewriter){
+            auto src_range = fd->getSourceRange();
+            rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
+        }
+        void add_cold_struct_to(const clang::RecordDecl *rd , Rewriter *rewriter)
+        {
+            rewriter->InsertTextBefore(rd->getSourceRange().getBegin(), "TEST\n");
+        }
+    }
+}
 
 void coop::record::record_info::init(
     const clang::RecordDecl* class_struct,
@@ -30,8 +42,12 @@ void coop::record::record_info::init(
     //since a function can mention the same member several times, we need to make sure each
     //iteration over the same member associates with the same adress in the matrix (has the same index)
     int index_count = 0;
+    field_weights.resize(fields.size());
     for(auto f : fields){
-            member_idx_mapping[f] = index_count++;
+        field_idx_mapping[f] = index_count;
+
+        std::pair<const FieldDecl*, float> f_w {f, 0};
+        field_weights[index_count++] = f_w;
     }
 }
 
@@ -46,7 +62,7 @@ std::vector<const MemberExpr*>* coop::record::record_info::isRelevantFunction(co
 int coop::record::record_info::isRelevantField(const MemberExpr* memExpr){
     const FieldDecl* field = static_cast<const FieldDecl*>(memExpr->getMemberDecl());
     if(std::find(fields.begin(), fields.end(), field) != fields.end()){
-        return member_idx_mapping[field];
+        return field_idx_mapping[field];
     }
     return -1;
 }

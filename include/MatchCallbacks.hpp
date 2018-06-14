@@ -21,6 +21,7 @@ namespace coop {
             virtual void run(const MatchFinder::MatchResult &result) = 0;
     };
 
+
     //matchcallback that registeres members of classes for later usage
     class MemberRegistrationCallback : public coop::CoopMatchCallback {
     public:

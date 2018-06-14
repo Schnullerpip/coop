@@ -12,6 +12,7 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/Rewrite/Core/Rewriter.h"
 
 #include <ctime>
 #include <string>
@@ -49,6 +50,11 @@ namespace coop{
     int get_sizeof_in_bits(const FieldDecl* field);
     //will return the sizeof value for a field in Byte
     int get_sizeof_in_byte(const FieldDecl* field);
+
+    namespace src_mod {
+        void remove_decl(const clang::FieldDecl *fd, Rewriter *rewriter);
+        void add_cold_struct_to(const clang::RecordDecl* , Rewriter*);
+    }
 
 
     namespace match {
@@ -154,7 +160,13 @@ namespace coop{
 
             //will associate each member with a consistent index
             std::map<const clang::FieldDecl*, int>
-                member_idx_mapping;
+                field_idx_mapping;
+            //will hold the field weight for each field
+            std::vector<std::pair<const clang::FieldDecl*, float>>
+                field_weights;
+            //will hold the pointers to the cold fields
+            std::vector<const clang::FieldDecl*>
+                cold_field_idx;
 
             //returns a list of members associated by a function for this record - if it does; else nullptr
             std::vector<const MemberExpr*>* isRelevantFunction(const clang::FunctionDecl* func);

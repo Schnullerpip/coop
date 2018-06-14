@@ -4,7 +4,9 @@ public:
 	int m_a;
 	char m_b = 'a';
 	short m_c[2];
+	int julian = 10;
 };
+
 
 class C {
 public:
