@@ -1,10 +1,11 @@
+//clang sources
+#include "clang/AST/DeclCXX.h"
+#include "clang/Rewrite/Core/Rewriter.h"
 //custom includes
 #include "coop_utils.hpp"
 #include "SystemStateInformation.hpp"
 #include "MatchCallbacks.hpp"
-//custom needed
-#include "clang/AST/DeclCXX.h"
-#include "clang/Rewrite/Core/Rewriter.h"
+#include "SourceModification.h"
 
 using namespace clang::tooling;
 using namespace llvm;
@@ -13,40 +14,6 @@ using namespace clang;
 using namespace clang::ast_matchers;
 
 #define coop_hot_split_tolerance_f .17f
-
-//test TODO DELETE THIS CLASS!!!!!!!!!!!!!!!!!!!!!!!!!!!1!
-class RewriterTest : public MatchFinder::MatchCallback {
-	public:
-		Rewriter &rewriter;
-
-		RewriterTest(Rewriter &r):rewriter(r){}
-
-		virtual void run(const MatchFinder::MatchResult &result){
-			const FieldDecl* rd = result.Nodes.getNodeAs<FieldDecl>(coop_member_s);
-			if(rd){
-				rewriter.setSourceMgr(rd->getASTContext().getSourceManager(), rd->getASTContext().getLangOpts());
-				llvm::outs() << rd->getNameAsString() << "'s loc is: " << rd->getLocation().printToString(rewriter.getSourceMgr()) << "\n" 
-					<< "its locStart is: " << rd->getLocStart().printToString(rewriter.getSourceMgr()) << "\n"
-					<< "its locEnd is: " << rd->getLocEnd().printToString(rewriter.getSourceMgr()) << "\n"
-					<< "its innerLocStart is: " << rd->getInnerLocStart().printToString(rewriter.getSourceMgr()) << "\n"
-					<< "its outerLocStart is: " << rd->getOuterLocStart().printToString(rewriter.getSourceMgr()) << "\n";
-
-				SourceManager & src_man = rewriter.getSourceMgr();
-				unsigned column_start = src_man.getPresumedColumnNumber(rd->getLocation());
-				unsigned column_end = src_man.getPresumedColumnNumber(rd->getLocEnd());
-
-				llvm::outs() << "loc start/end: " << column_start << " / " << column_end;
-
-				coop::src_mod::remove_decl(rd, &rewriter);
-
-				//if(strcmp(rd->getNameAsString().c_str(), "julian") == 0){
-				//	rewriter.ReplaceText(rd->getLocStart(), 0, "//");
-				//}else{
-				//	rewriter.ReplaceText(rd->getLocStart(), 0, "//");
-				//}
-			}
-		}
-};
 
 // -------------- GENERAL STUFF ----------------------------------------------------------
 // Apply a custom category to all command-line options so that they are the
@@ -120,17 +87,12 @@ int main(int argc, const char **argv) {
 		coop::LoopMemberUsageCallback while_loop_member_usages_callback(&user_files);
 		coop::NestedLoopCallback nested_loop_callback(&user_files);
 
-		RewriterTest rwt(rewriter);
-		data_aggregation.addMatcher(fieldDecl(hasName("julian")).bind(coop_member_s), &rwt);
-		data_aggregation.addMatcher(fieldDecl(hasName("aloha")).bind(coop_member_s), &rwt);
-
-
 		data_aggregation.addMatcher(coop::match::members, &member_registration_callback);
-		//data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
-		//data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
-		//data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_member_usages_callback);
-		//data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_member_usages_callback);
-		//data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
+		data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_member_usages_callback);
+		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_member_usages_callback);
+		data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
 	coop::logger::depth--;
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
@@ -263,7 +225,32 @@ int main(int argc, const char **argv) {
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
 
 	coop::logger::out("applying changes to source files", coop::logger::RUNNING);
-		//TODO: apply measurements respectively, to make the target program more cachefriendly
+		//now that we know the hot/cold fields we now should process the source-file changes 
+
+		for(int i = 0; i < num_records; ++i){
+			coop::record::record_info &rec = record_stats[i];
+
+			if(!rec.cold_field_idx.empty()){
+				coop::src_mod::cold_pod_representation cpr;
+				//first of all get rid of all the cold field-declarations in the records
+				for(auto field : rec.cold_field_idx){
+					coop::src_mod::remove_decl(field, &rewriter);
+				}
+
+				//create a struct that holds all the field-declarations for the cold fields
+				coop::src_mod::create_cold_struct_for(&rec, &cpr, &rewriter);
+
+				//give the record a reference to an instance of this new cold_data_struct
+				coop::src_mod::add_cpr_ref_to(&rec, cpr.name.c_str(), &rewriter);
+
+				//change all appearances of the cold data fields to be referenced by the record's instance
+					//TODO
+
+				//instantiate the cold data struct -> probably as an array
+					//TODO
+			}
+
+		}
 	coop::logger::out("applying changes to source files", coop::logger::TODO);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);

@@ -4,10 +4,11 @@ public:
 	int m_a;
 	char m_b = 'a';
 	short m_c[2];
-	int julian = 10;
 };
 
 
+struct coop_cold_data_struct_C {
+};
 class C {
 public:
 	int m_d;

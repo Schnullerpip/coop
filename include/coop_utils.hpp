@@ -51,12 +51,6 @@ namespace coop{
     //will return the sizeof value for a field in Byte
     int get_sizeof_in_byte(const FieldDecl* field);
 
-    namespace src_mod {
-        void remove_decl(const clang::FieldDecl *fd, Rewriter *rewriter);
-        void add_cold_struct_to(const clang::RecordDecl* , Rewriter*);
-    }
-
-
     namespace match {
         extern DeclarationMatcher classes;
 		extern DeclarationMatcher members;

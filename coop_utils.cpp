@@ -9,19 +9,6 @@ int coop::get_sizeof_in_byte(const FieldDecl* field){
     return get_sizeof_in_bits(field)/8;
 }
 
-namespace coop{
-    namespace src_mod{
-        void remove_decl(const clang::FieldDecl *fd, Rewriter *rewriter){
-            auto src_range = fd->getSourceRange();
-            rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
-        }
-        void add_cold_struct_to(const clang::RecordDecl *rd , Rewriter *rewriter)
-        {
-            rewriter->InsertTextBefore(rd->getSourceRange().getBegin(), "TEST\n");
-        }
-    }
-}
-
 void coop::record::record_info::init(
     const clang::RecordDecl* class_struct,
     std::vector<const clang::FieldDecl*> *field_vector,
