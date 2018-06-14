@@ -41,7 +41,7 @@ namespace coop{
                 ss << "\n" << get_field_declaration_text(field) << ";";
             }
 
-            ss << "\n} " << cpr->record_i->record->getNameAsString().c_str() << "_cold_data" << "[" << size << "]" << ";\n";
+            ss << "\n} " << cpr->record_i->record->getNameAsString().c_str() << "_cold_data" << "[" << size << "]" << ";\n\n";
 
             ASTContext &ast_context = rd->getASTContext();
             rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
