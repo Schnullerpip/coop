@@ -137,5 +137,16 @@ namespace coop {
 
         void run(const MatchFinder::MatchResult &result);
     };
+
+    /*will find the main function
+        this entrence is needed to ensure stack allocation for the cold data structs is present when Objects are created
+    */
+    class FindMainFunction : public coop::CoopMatchCallback {
+    public:
+        static FunctionDecl  const * main_function_ptr;
+        explicit FindMainFunction(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+
+        void run(const MatchFinder::MatchResult &result);
+    };
 }
 #endif

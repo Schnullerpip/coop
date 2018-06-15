@@ -20,6 +20,8 @@ std::map<const FunctionDecl*, int>
 std::map<const FieldDecl*, std::vector<coop::ColdFieldCallback::memExpr_ASTcon>>
     coop::ColdFieldCallback::cold_field_occurances = {};
 
+FunctionDecl const * coop::FindMainFunction::main_function_ptr = nullptr;
+
 //method implementations
 const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
     const char* relevant_token;
@@ -288,4 +290,8 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
             }
         }
     }
+}
+
+void coop::FindMainFunction::run(const MatchFinder::MatchResult &result){
+    main_function_ptr = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
 }

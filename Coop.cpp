@@ -235,12 +235,18 @@ int main(int argc, const char **argv) {
 			cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
 		}
 
+		MatchFinder find_main_method;
+		coop::FindMainFunction find_main_function_callback(&user_files);
+		find_main_method.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
+
 		for(unsigned i = 0; i < ASTs.size(); ++i){
 			MatchFinder find_cold_member_usages;
 			ASTContext &ast_context = ASTs[i]->getASTContext();
 			coop::ColdFieldCallback cold_field_callback(&user_files, &cold_members, &ast_context);
 			find_cold_member_usages.addMatcher(memberExpr().bind(coop_member_s), &cold_field_callback);
-			find_cold_member_usages.matchAST(ASTs[i]->getASTContext());
+
+			find_cold_member_usages.matchAST(ast_context);
+			find_main_method.matchAST(ast_context);
 		}
 
 		for(int i = 0; i < num_records; ++i){
@@ -260,20 +266,23 @@ int main(int argc, const char **argv) {
 				}
 
 				//create a struct that holds all the field-declarations for the cold fields
-				coop::src_mod::create_cold_struct_for(&rec, &cpr, coop_standard_cold_data_allocation_size, &rewriter);
+				coop::src_mod::create_cold_struct_for(
+					&rec,
+					&cpr,
+					coop_standard_cold_data_allocation_size,
+					coop::FindMainFunction::main_function_ptr,
+					&rewriter);
 
 				//give the record a reference to an instance of this new cold_data_struct
-				coop::src_mod::add_cpr_ref_to(&rec, cpr.name.c_str(), &rewriter);
-
-
+				coop::src_mod::add_cpr_ref_to(&rec, &cpr, coop_standard_cold_data_allocation_size, &rewriter);
 			}
-
 		}
 	coop::logger::out("applying changes to source files", coop::logger::TODO);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
 		delete[] record_field_weight_average;
 		delete[] record_stats;
+		//TODO safely free the cold struct's memories!!! -> should probably happen in the modified classes -> maybe RAII? destructor?
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
 
 	rewriter.overwriteChangedFiles();
