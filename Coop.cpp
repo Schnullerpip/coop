@@ -228,14 +228,35 @@ int main(int argc, const char **argv) {
 	coop::logger::out("applying changes to source files", coop::logger::RUNNING);
 		//now that we know the hot/cold fields we now should process the source-file changes 
 
+		//first we need another data aggregation - find all occurances of cold member usages
+		std::vector<const FieldDecl*> cold_members;
+		for(int i = 0; i < num_records; ++i){
+			auto &recs_cold_fields = record_stats[i].cold_field_idx;
+			cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
+		}
+
+		for(unsigned i = 0; i < ASTs.size(); ++i){
+			MatchFinder find_cold_member_usages;
+			ASTContext &ast_context = ASTs[i]->getASTContext();
+			coop::ColdFieldCallback cold_field_callback(&user_files, &cold_members, &ast_context);
+			find_cold_member_usages.addMatcher(memberExpr().bind(coop_member_s), &cold_field_callback);
+			find_cold_member_usages.matchAST(ASTs[i]->getASTContext());
+		}
+
 		for(int i = 0; i < num_records; ++i){
 			coop::record::record_info &rec = record_stats[i];
 
 			if(!rec.cold_field_idx.empty()){
 				coop::src_mod::cold_pod_representation cpr;
 				//first of all get rid of all the cold field-declarations in the records
+				// AND
+				//change all appearances of the cold data fields to be referenced by the record's instance
 				for(auto field : rec.cold_field_idx){
 					coop::src_mod::remove_decl(field, &rewriter);
+					auto field_usages = coop::ColdFieldCallback::cold_field_occurances[field];
+					for(auto field_usage : field_usages){
+						coop::src_mod::redirect_memExpr_to_cold_struct(field_usage.mem_expr_ptr, &cpr, field_usage.ast_context_ptr, rewriter);
+					}
 				}
 
 				//create a struct that holds all the field-declarations for the cold fields
@@ -244,8 +265,6 @@ int main(int argc, const char **argv) {
 				//give the record a reference to an instance of this new cold_data_struct
 				coop::src_mod::add_cpr_ref_to(&rec, cpr.name.c_str(), &rewriter);
 
-				//change all appearances of the cold data fields to be referenced by the record's instance
-					//TODO
 
 			}
 

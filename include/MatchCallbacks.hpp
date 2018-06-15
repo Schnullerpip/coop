@@ -108,5 +108,34 @@ namespace coop {
     private:
         void run(const MatchFinder::MatchResult &result);
     };
+
+    /*Will be used to find the cold members of a record*/
+    class ColdFieldCallback : public coop::CoopMatchCallback {
+    public:
+        struct memExpr_ASTcon{
+            const clang::MemberExpr* mem_expr_ptr;
+            ASTContext *ast_context_ptr;
+        };
+        /*will map a cold field to all its occurences (without declaration) in the code*/
+        static std::map<const clang::FieldDecl*, std::vector<memExpr_ASTcon>>
+            cold_field_occurances;
+        
+        explicit ColdFieldCallback(
+            std::vector<const char*> *user_files,
+            std::vector<const clang::FieldDecl*> *fields_to_find,
+            ASTContext *ast_c):
+                CoopMatchCallback(user_files)
+            {
+                this->fields_to_find = fields_to_find;
+                this->ast_context_ptr = ast_c;
+            }
+
+    private:
+        std::vector<const clang::FieldDecl*>
+            *fields_to_find;
+        ASTContext *ast_context_ptr;
+
+        void run(const MatchFinder::MatchResult &result);
+    };
 }
 #endif

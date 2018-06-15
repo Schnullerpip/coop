@@ -1,4 +1,5 @@
 #include "MatchCallbacks.hpp"
+#include "SourceModification.h"
 
 //static variables
 std::map<const clang::Stmt*, coop::loop_credentials>
@@ -15,6 +16,9 @@ std::map<const FunctionDecl*, std::vector<const MemberExpr*>>
 
 std::map<const FunctionDecl*, int>
     coop::FunctionRegistrationCallback::function_idx_mapping = {};
+
+std::map<const FieldDecl*, std::vector<coop::ColdFieldCallback::memExpr_ASTcon>>
+    coop::ColdFieldCallback::cold_field_occurances = {};
 
 //method implementations
 const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
@@ -193,40 +197,6 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
 }
 
 /*NestedLoopCallback*/
-void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
-    SourceManager &srcMgr = result.Context->getSourceManager();
-    std::stringstream ss;
-    Stmt const * parent_loop, *child_loop;
-
-    //TODO determine wether or not this loop is inside a user file
-
-    //find child loop
-    if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)){
-        child_loop = for_loop_child;
-        get_for_loop_identifier(for_loop_child, &srcMgr, &ss);
-        coop::logger::log_stream << "found CHILD 'for loop' " << ss.str();
-    }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_child_while_loop_s)){
-        child_loop = while_loop_child;
-        get_while_loop_identifier(while_loop_child, &srcMgr, &ss);
-        coop::logger::log_stream << "found CHILD 'while loop' " << ss.str();
-    }
-    coop::logger::log_stream << " parented by -> ";
-
-    //match parent loop
-    ss.str("");
-    if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
-        parent_loop = for_loop_parent;
-        get_for_loop_identifier(for_loop_parent, &srcMgr, &ss);
-        coop::logger::log_stream << "'for loop' " << ss.str();
-    }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
-        parent_loop = while_loop_parent;
-        get_while_loop_identifier(while_loop_parent, &srcMgr, &ss);
-        coop::logger::log_stream << "'while loop' " << ss.str();
-    }
-    coop::logger::out();
-
-    NestedLoopCallback::parent_child_map[parent_loop].push_back(child_loop);
-}
 
 void coop::NestedLoopCallback::traverse_parents(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, std::vector<const Stmt*>*)> callback){
     for(auto parent_childs : NestedLoopCallback::parent_child_map){
@@ -267,4 +237,55 @@ void coop::NestedLoopCallback::print_data(){
         coop::logger::out()--;
     });
     coop::logger::depth--;
+}
+
+void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
+    SourceManager &srcMgr = result.Context->getSourceManager();
+    std::stringstream ss;
+    Stmt const * parent_loop, *child_loop;
+
+    //TODO determine wether or not this loop is inside a user file
+
+    //find child loop
+    if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)){
+        child_loop = for_loop_child;
+        get_for_loop_identifier(for_loop_child, &srcMgr, &ss);
+        coop::logger::log_stream << "found CHILD 'for loop' " << ss.str();
+    }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_child_while_loop_s)){
+        child_loop = while_loop_child;
+        get_while_loop_identifier(while_loop_child, &srcMgr, &ss);
+        coop::logger::log_stream << "found CHILD 'while loop' " << ss.str();
+    }
+    coop::logger::log_stream << " parented by -> ";
+
+    //match parent loop
+    ss.str("");
+    if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
+        parent_loop = for_loop_parent;
+        get_for_loop_identifier(for_loop_parent, &srcMgr, &ss);
+        coop::logger::log_stream << "'for loop' " << ss.str();
+    }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
+        parent_loop = while_loop_parent;
+        get_while_loop_identifier(while_loop_parent, &srcMgr, &ss);
+        coop::logger::log_stream << "'while loop' " << ss.str();
+    }
+    coop::logger::out();
+
+    NestedLoopCallback::parent_child_map[parent_loop].push_back(child_loop);
+}
+
+void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
+{
+    const MemberExpr *mem_expr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
+    if(mem_expr){
+        if(FieldDecl const *field_decl = (const FieldDecl*) mem_expr->getMemberDecl()){
+            //check if the found member_expr matches a cold field
+            auto iter = std::find(fields_to_find->begin(), fields_to_find->end(), field_decl);
+            if(iter != fields_to_find->end()){
+                //we have found an occurence of a cold field! map it
+                memExpr_ASTcon e_a{mem_expr, ast_context_ptr};
+                coop::ColdFieldCallback::cold_field_occurances[field_decl].push_back(e_a);
+            }
+        }
+    }
 }
