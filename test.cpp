@@ -1,3 +1,5 @@
+#include <memory>
+
 class A {
 public:
   static int s_a;
