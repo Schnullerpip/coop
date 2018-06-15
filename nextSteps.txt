@@ -5,9 +5,10 @@
 	|_dereference loop_functioncalls (step 2.) using the already made member_matrices and add to the count[DONE]
 	|_check each loop against each other one and find nested loops -> increase member count of nested loops by some factor[DONE]
 	|_get all functions, that have loops -> nesting of loops can be hidden with e.g. a loop itereating a function call, that includes running a loop
-		find those functions and include their loops in the check for nested loops
+		find those functions and include their loops in the check for nested loops[DONE - but no true recursion!!]
 
-4. now we have each 'loop using member x how many times' considering nested loops
+4. now we have each 'loop using member x how many times' considering nested loops [DONE]
 5. favorable pairings are already encoded in the loop_member matrix -> possible rlated members appear in same loop
-	|_possible conflicts A&B; B&C; but A !& C -> any good solution?
+	|_possible conflicts A&B; B&C; but A !& C -> any good solution? [actually bad cohesion...]
 6. apply changes
+7. Find each and every occurance of cold-member usages in the code and replace it with the referenced cold_struct.member replication
