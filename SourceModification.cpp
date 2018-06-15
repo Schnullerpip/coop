@@ -69,7 +69,6 @@ namespace coop{
             //this function will only be called if ri->cold_field_idx is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
             rewriter->InsertTextBefore(ri->cold_field_idx[0]->getLocStart(), ss.str());
-
         }
 
         void redirect_memExpr_to_cold_struct(const MemberExpr *mem_expr, cold_pod_representation *cpr, ASTContext *ast_context, Rewriter &rewriter)
