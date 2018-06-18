@@ -71,14 +71,14 @@ namespace coop{
             ss.str("");
             ss.clear();
 
-            cpr->record_i = ri;
+            cpr->rec_info = ri;
 
-            ss << cpr->record_i->record->getNameAsString().c_str() << "_cold_data";
+            ss << cpr->rec_info->record->getNameAsString().c_str() << "_cold_data";
             cpr->instance_name = ss.str();
             ss.str("");
             ss.clear();
 
-            ss << "coop_u" << cpr->record_i->record->getNameAsString();
+            ss << "coop_u" << cpr->rec_info->record->getNameAsString();
             cpr->union_name = ss.str();
             ss.str("");
             ss.clear();
@@ -95,7 +95,7 @@ namespace coop{
             ss << "char " << cpr->instance_name << "[" << size << " * sizeof(" << cpr->struct_name << ")];\n\n";
 
             //create a union that consists of char[] and this new struct as []
-            ss << "union " << coop_union_name << cpr->record_i->record->getNameAsString() << "{\n"
+            ss << "union " << coop_union_name << cpr->rec_info->record->getNameAsString() << "{\n"
                 << "char * byte_data = " << cpr->instance_name << ";\n"
                 << cpr->struct_name << " * " << coop_union_resolve << ";\n}"
                 << cpr->union_name << ";\n\n";

@@ -16,7 +16,7 @@ namespace coop {
             //name of the union, that holds a strut_name[] and a char[] -> this way we can allocate memory
             //for struct_name on the stack even without struct_names fields having a standard constructor
             std::string union_name;
-            coop::record::record_info *record_i = nullptr;
+            coop::record::record_info *rec_info = nullptr;
         };
 
         void remove_decl(
