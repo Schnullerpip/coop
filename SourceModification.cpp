@@ -1,6 +1,6 @@
 #include "SourceModification.h"
+#include <fstream>
 
-#define coop_cold_data_pointer_name "coop_cold_data_ptr"
 
 namespace {
     std::string get_field_declaration_text(const Decl *fd){
@@ -24,26 +24,13 @@ namespace {
             src_man.getCharacterData(e)-src_man.getCharacterData(b));
     }
 
-    //std::string get_stmt_text(const Stmt* stmt, ASTContext *ast_context){
-    //    SourceManager &src_man = ast_context->getSourceManager();
-
-    //    clang::SourceLocation b(stmt->getLocStart()), _e(stmt->getLocEnd());
-    //    clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context->getLangOpts()));
-
-    //    return std::string(src_man.getCharacterData(b),
-    //        src_man.getCharacterData(e)-src_man.getCharacterData(b));
-    //}
-
-    //std::string get_sourcerange_text(SourceRange *sr, ASTContext *ast_context){
-    //    SourceManager &src_man = ast_context->getSourceManager();
-
-    //    clang::SourceLocation b(sr->getBegin()), _e(sr->getEnd());
-    //    clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context->getLangOpts()));
-
-    //    return std::string(src_man.getCharacterData(b),
-    //        src_man.getCharacterData(e)-src_man.getCharacterData(b));
-
-    //}
+    void replaceAll(std::string &data,const std::string &to_replace,const std::string &replace_with){
+        size_t pos = data.find(to_replace);
+        while(pos != std::string::npos){
+            data.replace(pos, to_replace.size(), replace_with);
+            pos = data.find(to_replace, pos + to_replace.size());
+        }
+    }
 }
 
 namespace coop{
@@ -53,59 +40,67 @@ namespace coop{
             rewriter->setSourceMgr(fd->getASTContext().getSourceManager(), fd->getASTContext().getLangOpts());
             //auto src_range = fd->getSourceRange();
             //rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
-            rewriter->ReplaceText(fd->getLocStart(), 0, "//");
+            rewriter->ReplaceText(fd->getLocStart(), 0, "//externalized COLD -> ");
         }
 
         void create_cold_struct_for(coop::record::record_info *ri, cold_pod_representation *cpr, size_t size, const FunctionDecl *main_function_ptr, Rewriter *rewriter){
             const RecordDecl* rd = ri->record;
             std::stringstream ss;
+            std::ifstream ifs("src_mod_templates/cold_struct_template.coop_tmpl");
+            std::string tmpl_file_content(
+                (std::istreambuf_iterator<char>(ifs)),
+                (std::istreambuf_iterator<char>()));
 
+            //determine the generated struct's name
             ss << coop_cold_struct_s << rd->getNameAsString();
             cpr->struct_name = ss.str();
             ss.str("");
-            ss.clear();
 
             cpr->rec_info = ri;
 
-            ss << cpr->rec_info->record->getNameAsString().c_str() << "_cold_data";
-            cpr->instance_name = ss.str();
-            ss.str("");
-            ss.clear();
+            const char * record_name = cpr->rec_info->record->getNameAsString().c_str();
 
+            //determine the name of the data array that will hold space for the instances
+            ss << record_name << "_cold_data";
+            cpr->cold_data_container_name = ss.str();
+            ss.str("");
+
+            //determine the union's name that will provide access to the byte array as an array of generated_struct's type
             ss << "coop_u" << cpr->rec_info->record->getNameAsString();
             cpr->union_name = ss.str();
             ss.str("");
-            ss.clear();
 
-            //name the new struct
-            ss << "struct " << cpr->struct_name << " {";
+            replaceAll(tmpl_file_content, "$STRUCT_NAME", cpr->struct_name);
+
             //assemble all the struct's fields
             for(auto field : ri->cold_field_idx){
-                ss << "\n" << get_field_declaration_text(field) << ";";
+                ss << get_field_declaration_text(field) << ";\n";
             }
-            ss << "\n};\n\n";
 
-            //reserve memory on the stack for this new struct
-            ss << "char " << cpr->instance_name << "[" << size << " * sizeof(" << cpr->struct_name << ")];\n\n";
+            replaceAll(tmpl_file_content, "$STRUCT_FIELDS", ss.str());
+            ss.str("");
 
-            //create a union that consists of char[] and this new struct as []
-            ss << "union " << coop_union_name << cpr->rec_info->record->getNameAsString() << "{\n"
-                << "char * byte_data = " << cpr->instance_name << ";\n"
-                << cpr->struct_name << " * " << coop_union_resolve << ";\n}"
-                << cpr->union_name << ";\n\n";
+            replaceAll(tmpl_file_content, "$DATA_NAME", cpr->cold_data_container_name);
+            ss << size;
+            replaceAll(tmpl_file_content, "$SIZE", ss.str());
+            ss.str("");
+
+            replaceAll(tmpl_file_content, "$UNION_NAME", coop_union_name);
+            replaceAll(tmpl_file_content, "$UNION_BYTE_DATA", coop_union_byte_data);
+            replaceAll(tmpl_file_content, "$UNION_COLD_DATA", coop_union_cold_data);
+            replaceAll(tmpl_file_content, "$UNION_INSTANCE_NAME", cpr->union_name);
+
+            llvm::outs() << tmpl_file_content;
 
             ASTContext &ast_context = rd->getASTContext();
             rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
-            rewriter->InsertTextBefore(rd->getSourceRange().getBegin(), ss.str());
-
-            ss.str("");
-            ss.clear();
+            rewriter->InsertTextBefore(rd->getSourceRange().getBegin(), tmpl_file_content);
 
             //make the target program allocate memory on the stack for the new struct TODO
             //therefor we want to take the first AST node of the main function and prepend it with the allocation code
 
             //auto entry_point = (*main_function_ptr->getBody()->child_begin())->getLocStart();
-            //ss << cpr->instance_name << " = alloca(" << size << " * sizeof(" << cpr->struct_name << "));\n";
+            //ss << cpr->cold_data_container_name << " = alloca(" << size << " * sizeof(" << cpr->struct_name << "));\n";
             //rewriter->InsertTextBefore(entry_point, ss.str());
         }
 

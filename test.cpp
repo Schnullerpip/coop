@@ -1,4 +1,3 @@
-#include <memory>
 
 class A {
 public:

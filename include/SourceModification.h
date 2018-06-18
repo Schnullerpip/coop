@@ -4,18 +4,25 @@
 
 #define coop_cold_struct_s "coop_cold_fields_"
 #define coop_safe_struct_acces_method_name "access_cold_data()"
+#define coop_cold_data_pointer_name "coop_cold_data_ptr"
 #define coop_union_name "coop_union_"
-#define coop_union_resolve "cold_data"
+#define coop_union_byte_data "byte_data"
+#define coop_union_cold_data "data"
 
 namespace coop {
     namespace src_mod {
 
         struct cold_pod_representation{
-            std::string struct_name; //name of the created struct
-            std::string instance_name; //name of the address for the allocated space of the created struct
+            //name of the created struct
+            std::string struct_name;
+
+            //name of the address for the allocated space of the created struct
+            std::string cold_data_container_name;
+
             //name of the union, that holds a strut_name[] and a char[] -> this way we can allocate memory
             //for struct_name on the stack even without struct_names fields having a standard constructor
             std::string union_name;
+
             coop::record::record_info *rec_info = nullptr;
         };
 
