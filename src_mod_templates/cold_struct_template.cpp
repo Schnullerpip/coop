@@ -21,7 +21,7 @@ public:
 		for(unsigned long i = 0; i < SIZE; ++i){
 			_ptr = UNION_INSTANCE_NAME.UNION_COLD_DATA+i;
 			if(i == SIZE - 1){
-				*_next = UNION_INSTANCE_NAME.UNION_COLD_DATA;
+				*_next = nullptr;
 			}else{
 				*_next = UNION_INSTANCE_NAME.UNION_COLD_DATA+(i+1);
 			}
@@ -29,6 +29,9 @@ public:
 	}
 
 	STRUCT_NAME * get(){
+		if(!free_ptr){
+			return nullptr;
+		}
 		_ptr = free_ptr;
 		STRUCT_NAME *ret = _ptr;
 		free_ptr = *_next;
