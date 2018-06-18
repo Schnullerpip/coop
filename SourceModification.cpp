@@ -1,6 +1,20 @@
 #include "SourceModification.h"
 #include <fstream>
 
+#define STRUCT_NAME "STRUCT_NAME"
+#define UNION_NAME "UNION_NAME"
+#define STRUCT_FIELDS "STRUCT_FIELDS"
+#define DATA_NAME "DATA_NAME"
+#define SIZE "SIZE"
+#define UNION_BYTE_DATA "UNION_BYTE_DATA"
+#define UNION_COLD_DATA "UNION_COLD_DATA"
+#define UNION_INSTANCE_NAME "UNION_INSTANCE_NAME"
+#define COLD_DATA_PTR_NAME "COLD_DATA_PTR_NAME"
+#define REINTERPRET_PTR "REINTERPRET_PTR"
+#define REINTERPRET_NEXT "REINTERPRET_NEXT"
+#define FREE_PTR_NAME "FREE_PTR_NAME"
+#define FREE_LIST_NAME "FREE_LIST_NAME"
+#define FREE_LIST_INSTANCE "FREE_LIST_INSTANCE"
 
 namespace {
     std::string get_field_declaration_text(const Decl *fd){
@@ -38,15 +52,14 @@ namespace coop{
 
         void remove_decl(const FieldDecl *fd, Rewriter *rewriter){
             rewriter->setSourceMgr(fd->getASTContext().getSourceManager(), fd->getASTContext().getLangOpts());
-            //auto src_range = fd->getSourceRange();
-            //rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
-            rewriter->ReplaceText(fd->getLocStart(), 0, "//externalized COLD -> ");
+            auto src_range = fd->getSourceRange();
+            rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
         }
 
         void create_cold_struct_for(coop::record::record_info *ri, cold_pod_representation *cpr, size_t size, const FunctionDecl *main_function_ptr, Rewriter *rewriter){
             const RecordDecl* rd = ri->record;
             std::stringstream ss;
-            std::ifstream ifs("src_mod_templates/cold_struct_template.coop_tmpl");
+            std::ifstream ifs("src_mod_templates/cold_struct_template.cpp");
             std::string tmpl_file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
@@ -58,7 +71,18 @@ namespace coop{
 
             cpr->rec_info = ri;
 
-            const char * record_name = cpr->rec_info->record->getNameAsString().c_str();
+            std::string record_name = cpr->rec_info->record->getNameAsString().c_str();
+
+            //determine the name of the free list coming with the generated struct
+            ss << coop_free_list_name << record_name;
+            cpr->free_list_name = ss.str();
+            ss.str("");
+
+            //determine the firr list instance's name
+            ss << coop_free_list_instance_name << record_name;
+            cpr->free_list_instance_name = ss.str();
+            ss.str("");
+
 
             //determine the name of the data array that will hold space for the instances
             ss << record_name << "_cold_data";
@@ -66,31 +90,36 @@ namespace coop{
             ss.str("");
 
             //determine the union's name that will provide access to the byte array as an array of generated_struct's type
-            ss << "coop_u" << cpr->rec_info->record->getNameAsString();
+            ss << coop_union_instance_name << cpr->rec_info->record->getNameAsString();
             cpr->union_name = ss.str();
             ss.str("");
 
-            replaceAll(tmpl_file_content, "$STRUCT_NAME", cpr->struct_name);
 
             //assemble all the struct's fields
             for(auto field : ri->cold_field_idx){
-                ss << get_field_declaration_text(field) << ";\n";
+                ss << get_field_declaration_text(field);
+                if(*ri->cold_field_idx.end() != field){
+                    ss << ";\n";
+                }
             }
 
-            replaceAll(tmpl_file_content, "$STRUCT_FIELDS", ss.str());
+            replaceAll(tmpl_file_content, STRUCT_FIELDS, ss.str());
             ss.str("");
 
-            replaceAll(tmpl_file_content, "$DATA_NAME", cpr->cold_data_container_name);
+            replaceAll(tmpl_file_content, STRUCT_NAME, cpr->struct_name);
+            replaceAll(tmpl_file_content, DATA_NAME, cpr->cold_data_container_name);
             ss << size;
-            replaceAll(tmpl_file_content, "$SIZE", ss.str());
+            replaceAll(tmpl_file_content, SIZE, ss.str());
             ss.str("");
 
-            replaceAll(tmpl_file_content, "$UNION_NAME", coop_union_name);
-            replaceAll(tmpl_file_content, "$UNION_BYTE_DATA", coop_union_byte_data);
-            replaceAll(tmpl_file_content, "$UNION_COLD_DATA", coop_union_cold_data);
-            replaceAll(tmpl_file_content, "$UNION_INSTANCE_NAME", cpr->union_name);
-
-            llvm::outs() << tmpl_file_content;
+            ss << coop_union_name << record_name;
+            replaceAll(tmpl_file_content, UNION_NAME, ss.str());
+            ss.str("");
+            replaceAll(tmpl_file_content, UNION_BYTE_DATA, coop_union_byte_data);
+            replaceAll(tmpl_file_content, UNION_COLD_DATA, coop_union_cold_data);
+            replaceAll(tmpl_file_content, UNION_INSTANCE_NAME, cpr->union_name);
+            replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
+            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE, cpr->free_list_instance_name);
 
             ASTContext &ast_context = rd->getASTContext();
             rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
@@ -113,20 +142,18 @@ namespace coop{
             ASTContext &ast_context = ri->record->getASTContext();
             rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
 
-            std::stringstream ss;
-            ss << "//pointer to the cold_data struct that holds this reference's cold data\n"
-                << cpr->struct_name << " *" << coop_cold_data_pointer_name << " = nullptr;\n"
-                << "//this getter ensures, that an instance of the cold struct will be created on access\n"
-                << "inline " << cpr->struct_name << " * "
-                << coop_safe_struct_acces_method_name << "{\nif(!" << coop_cold_data_pointer_name << ")\n{\n"
-                << "//TODO safely initialize an instance of this struct, considering its fields not having a standardconstructor..." <<"\n"
-                << "//TODO safely dereference an index that is unique to each"
-                << "}\n"
-                << "return " << coop_cold_data_pointer_name << ";\n}\n";
+            std::ifstream ifs("src_mod_templates/intrusive_record_addition.cpp");
+            std::string file_content(
+                (std::istreambuf_iterator<char>(ifs)),
+                (std::istreambuf_iterator<char>()));
+
+            replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
+            replaceAll(file_content, COLD_DATA_PTR_NAME, coop_cold_data_pointer_name);
+            replaceAll(file_content, FREE_LIST_INSTANCE, cpr->free_list_instance_name);
 
             //this function will only be called if ri->cold_field_idx is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
-            rewriter->InsertTextBefore(ri->cold_field_idx[0]->getLocStart(), ss.str());
+            rewriter->InsertTextBefore(ri->cold_field_idx[0]->getLocStart(), file_content);
         }
 
         void redirect_memExpr_to_cold_struct(const MemberExpr *mem_expr, cold_pod_representation *cpr, ASTContext *ast_context, Rewriter &rewriter)
