@@ -8,4 +8,3 @@ inline STRUCT_NAME * access_cold_data(){
 	}
 	return COLD_DATA_PTR_NAME;
 }
-

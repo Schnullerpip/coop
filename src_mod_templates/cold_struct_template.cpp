@@ -34,6 +34,15 @@ public:
 		free_ptr = *_next;
 		return ret;
 	}
+
+	void free(STRUCT_NAME *p){
+		if(p <= UNION_INSTANCE_NAME.UNION_COLD_DATA && p < UNION_INSTANCE_NAME.UNION_COLD_DATA+SIZE*sizeof(STRUCT_NAME)){
+			STRUCT_NAME * tmp_ptr = free_ptr;
+			free_ptr = p;
+			_ptr = free_ptr;
+			*_next = tmp_ptr;
+		}
+	}
 }FREE_LIST_INSTANCE;
 
 
