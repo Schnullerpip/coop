@@ -44,12 +44,6 @@ namespace {
     //        src_man.getCharacterData(e)-src_man.getCharacterData(b));
 
     //}
-
-    std::string get_allocate_instance_space_for_struct_string(coop::src_mod::cold_pod_representation *cpr, size_t size){
-        std::stringstream ss;
-        ss << cpr->instance_name << " = (" << cpr->struct_name << "*) malloc(" << size << " * sizeof(" << cpr->struct_name << "));";
-        return ss.str();
-    }
 }
 
 namespace coop{
@@ -130,7 +124,10 @@ namespace coop{
                 << "//this getter ensures, that an instance of the cold struct will be created on access\n"
                 << "inline " << cpr->struct_name << " * "
                 << coop_safe_struct_acces_method_name << "{\nif(!" << coop_cold_data_pointer_name << ")\n{\n"
-                << "//TODO safely initialize an instance of this struct, considering its fields not having a standardconstructor..." <<";\n}\nreturn " << coop_cold_data_pointer_name << ";\n}\n";
+                << "//TODO safely initialize an instance of this struct, considering its fields not having a standardconstructor..." <<"\n"
+                << "//TODO safely dereference an index that is unique to each"
+                << "}\n"
+                << "return " << coop_cold_data_pointer_name << ";\n}\n";
 
             //this function will only be called if ri->cold_field_idx is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
