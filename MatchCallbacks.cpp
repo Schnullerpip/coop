@@ -295,3 +295,12 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
 void coop::FindMainFunction::run(const MatchFinder::MatchResult &result){
     main_function_ptr = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
 }
+
+void coop::FindDestructor::run(const MatchFinder::MatchResult &result){
+    const Decl *destructor_decl = result.Nodes.getNodeAs<Decl>(coop_destructor_s);
+    if(destructor_decl){
+        rec.destructor_ptr = destructor_decl;
+        coop::logger::log_stream << "found destructor: " << destructor_decl->getCanonicalDecl()->getDeclKindName();
+        coop::logger::out();
+    }
+}

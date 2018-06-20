@@ -148,5 +148,21 @@ namespace coop {
 
         void run(const MatchFinder::MatchResult &result);
     };
+
+    /*will find destructors to certain records
+    this is very important, because while using a freelist as a cold-data container is nice
+    it will most certainly start to fragment, very fast -> so whenever an object becomes destroyed we want to make sure,
+    that it's corresponding cold struct is marked free, as well -> we need the destructor, or make one if there is none*/
+    class FindDestructor : public MatchFinder::MatchCallback {
+    public:
+        FindDestructor(coop::record::record_info &record_info)
+            :rec(record_info)
+        {
+
+        }
+    private:
+        coop::record::record_info &rec;
+        void run(const MatchFinder::MatchResult &result);
+    };
 }
 #endif

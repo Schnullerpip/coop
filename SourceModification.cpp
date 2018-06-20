@@ -1,4 +1,5 @@
 #include "SourceModification.h"
+#include "clang/AST/DeclCXX.h"
 #include <fstream>
 
 #define STRUCT_NAME "STRUCT_NAME"
@@ -95,10 +96,10 @@ namespace coop{
             ss.str("");
 
 
-            //assemble all the struct's fields
-            for(auto field : ri->cold_field_idx){
+            //assemble all the struct's cold fields
+            for(auto field : ri->cold_fields){
                 ss << get_field_declaration_text(field);
-                if(*ri->cold_field_idx.end() != field){
+                if(*ri->cold_fields.end() != field){
                     ss << ";\n";
                 }
             }
@@ -151,9 +152,9 @@ namespace coop{
             replaceAll(file_content, COLD_DATA_PTR_NAME, coop_cold_data_pointer_name);
             replaceAll(file_content, FREE_LIST_INSTANCE, cpr->free_list_instance_name);
 
-            //this function will only be called if ri->cold_field_idx is not empty, so we can safely take its first element
+            //this function will only be called if ri->cold_fields is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
-            rewriter->InsertTextBefore(ri->cold_field_idx[0]->getLocStart(), file_content);
+            rewriter->InsertTextBefore(ri->cold_fields[0]->getLocStart(), file_content);
         }
 
         void redirect_memExpr_to_cold_struct(const MemberExpr *mem_expr, cold_pod_representation *cpr, ASTContext *ast_context, Rewriter &rewriter)
@@ -171,6 +172,56 @@ namespace coop{
                 ss.str());
             
             rewriter.ReplaceText(mem_expr->getSourceRange(), usage_text);
+        }
+
+        void handle_free_list_fragmentation(cold_pod_representation *cpr, Rewriter *rewriter){
+            const Decl *dtor_decl = cpr->rec_info->destructor_ptr;
+
+            //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
+            std::stringstream free_stmt;
+            free_stmt << "//marks the freelist's cold_struct instance as reusable\n"
+               << "free_list_instance_"
+               << cpr->rec_info->record->getNameAsString()
+               << ".free(coop_cold_data_ptr);\n";
+
+            if(dtor_decl){
+                coop::logger::out("got declaration");
+                const Stmt *dtor_body = cpr->rec_info->destructor_ptr->getBody();
+                if(dtor_body){
+                    coop::logger::out("got body");
+                    auto stmts = dtor_body->children();
+                    if(*stmts.begin() == *stmts.end()){
+                        coop::logger::out("got empty body");
+                        //the destructor's body is empty (yeah i know.. but it could happen...)
+                        std::stringstream dtor_string;
+                        dtor_string << "{\n" << free_stmt.str() << "}\n";
+                        rewriter->ReplaceText(dtor_body->getSourceRange(), dtor_string.str());
+                    }else{
+                        coop::logger::out("got non empty body");
+                        //insert the relevant code to the existing constructor
+                        rewriter->InsertTextBefore(dtor_body->getLocEnd(), "\n");
+                        rewriter->InsertTextBefore(dtor_body->getLocEnd(), free_stmt.str());
+                    }
+                }else{
+                    coop::logger::out("no destructor decl");
+                    //has no destructor decl
+                    const RecordDecl* record_decl = cpr->rec_info->record;
+                    std::stringstream dtor_string;
+                    dtor_string << "\n~" << record_decl->getNameAsString() << "()\n{\n" << free_stmt.str() << "}";
+
+                    //we need some kind of entrance point to place our generated destructor
+                    //since we should know for sure, that this record has fields (we are considering it for a hot/cold split after all)
+                    //we can safely assume that inserting the destructor after the fields should work as an entry point.
+                    //this might not produce nice code, but it should work - and I got that going for me
+                    if(!record_decl->field_empty()){
+                        rewriter->InsertTextBefore(record_decl->getLocEnd(), dtor_string.str());
+                    }else{
+                        //severe BUG this should/could never happen -> if a record has no fields we should have never found it to be hot/cold splittable
+                        //if this occures shit is hitting fans, lots of em...
+                        coop::logger::out("severe BUG considered fieldless record for a hot/cold split... this should NEVER happen...");
+                    }
+                }
+            }
         }
     }
 }

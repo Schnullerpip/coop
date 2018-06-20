@@ -54,6 +54,11 @@ namespace coop {
             cold_pod_representation *cpr,
             ASTContext *ast_context,
             Rewriter &rewriter);
+
+        void handle_free_list_fragmentation(
+            cold_pod_representation *cpr,
+            Rewriter *rewriter
+        );
     }
 }
 #endif

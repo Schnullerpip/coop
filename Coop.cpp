@@ -210,7 +210,7 @@ int main(int argc, const char **argv) {
 			for(auto f_w : rec.field_weights){
 				coop::logger::log_stream << f_w.first->getNameAsString().c_str() << " is a ";
 				if(f_w.second < tolerant_average){
-					rec.cold_field_idx.push_back(f_w.first);
+					rec.cold_fields.push_back(f_w.first);
 					coop::logger::log_stream << "cold ";
 				}else{
 					coop::logger::log_stream << "hot ";
@@ -228,17 +228,35 @@ int main(int argc, const char **argv) {
 	coop::logger::out("applying changes to source files", coop::logger::RUNNING);
 		//now that we know the hot/cold fields we now should process the source-file changes 
 
-		//first we need another data aggregation - find all occurances of cold member usages
+		/*first we need another data aggregation
+			- find all occurances of cold member usages
+			- find the relevant record's destructors
+		*/
 		std::vector<const FieldDecl*> cold_members;
 		for(int i = 0; i < num_records; ++i){
-			auto &recs_cold_fields = record_stats[i].cold_field_idx;
+			auto &recs_cold_fields = record_stats[i].cold_fields;
 			cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
 		}
 
-		MatchFinder find_main_method;
+		MatchFinder finder;
 		coop::FindMainFunction find_main_function_callback(&user_files);
-		find_main_method.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
+		finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
 
+		std::vector<coop::FindDestructor*> destructor_finders;
+		for(int i = 0; i < num_records; ++i){
+			auto &rec = record_stats[i];
+			if(!rec.cold_fields.empty()){
+				coop::FindDestructor *df = new coop::FindDestructor(rec);
+				destructor_finders.push_back(df);
+				std::stringstream ss;
+				ss << "~" << rec.record->getNameAsString();
+				finder.addMatcher(
+					cxxDestructorDecl(hasName(ss.str().c_str())).bind(coop_destructor_s),
+					df);
+			}
+		}
+
+		//apply the matchers to all the ASTs
 		for(unsigned i = 0; i < ASTs.size(); ++i){
 			MatchFinder find_cold_member_usages;
 			ASTContext &ast_context = ASTs[i]->getASTContext();
@@ -246,18 +264,25 @@ int main(int argc, const char **argv) {
 			find_cold_member_usages.addMatcher(memberExpr().bind(coop_member_s), &cold_field_callback);
 
 			find_cold_member_usages.matchAST(ast_context);
-			find_main_method.matchAST(ast_context);
+			finder.matchAST(ast_context);
+		}
+		//destroy the destructor finders
+		for(auto df : destructor_finders){
+			delete df;
 		}
 
+		//traverse all the records -> if they have cold fields -> split them in a cold_data struct
 		for(int i = 0; i < num_records; ++i){
 			coop::record::record_info &rec = record_stats[i];
 
-			if(!rec.cold_field_idx.empty()){
+			//this check indicates wether or not the record has cold fields
+			if(!rec.cold_fields.empty()){
 				coop::src_mod::cold_pod_representation cpr;
+
 				//first of all get rid of all the cold field-declarations in the records
 				// AND
 				//change all appearances of the cold data fields to be referenced by the record's instance
-				for(auto field : rec.cold_field_idx){
+				for(auto field : rec.cold_fields){
 					coop::src_mod::remove_decl(field, &rewriter);
 					auto field_usages = coop::ColdFieldCallback::cold_field_occurances[field];
 					for(auto field_usage : field_usages){
@@ -274,18 +299,27 @@ int main(int argc, const char **argv) {
 					&rewriter);
 
 				//give the record a reference to an instance of this new cold_data_struct
-				coop::src_mod::add_cpr_ref_to(&rec, &cpr, coop_standard_cold_data_allocation_size, &rewriter);
+				coop::src_mod::add_cpr_ref_to(
+					&rec,
+					&cpr,
+					coop_standard_cold_data_allocation_size,
+					&rewriter);
+				
+				//modify/create the record's destructor, to handle free-list fragmentation
+				coop::src_mod::handle_free_list_fragmentation(
+					&cpr,
+					&rewriter);
+
 			}
 		}
+		rewriter.overwriteChangedFiles();
 	coop::logger::out("applying changes to source files", coop::logger::TODO);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
 		delete[] record_field_weight_average;
 		delete[] record_stats;
-		//TODO safely free the cold struct's memories!!! -> should probably happen in the modified classes -> maybe RAII? destructor?
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
 
-	rewriter.overwriteChangedFiles();
 
 	return 0;
 }

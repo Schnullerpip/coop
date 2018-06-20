@@ -43,6 +43,8 @@ using namespace clang::ast_matchers;
 #define coop_child_for_loop_s "child_for_loop_s"
 #define coop_child_while_loop_s "child_while_loop_s"
 
+#define coop_destructor_s "destructor"
+
 
 namespace coop{
 
@@ -160,7 +162,10 @@ namespace coop{
                 field_weights;
             //will hold the pointers to the cold fields
             std::vector<const clang::FieldDecl*>
-                cold_field_idx;
+                cold_fields;
+
+            //will hold the body of the record's destructor (if any) -> must be set manually!
+            const Decl *destructor_ptr = nullptr;
 
             //returns a list of members associated by a function for this record - if it does; else nullptr
             std::vector<const MemberExpr*>* isRelevantFunction(const clang::FunctionDecl* func);
