@@ -5,7 +5,13 @@ public:
   int m_a;
   char m_b = 'a';
   short m_c[2];
+
+  ~A();
 };
+
+A::~A(){
+
+}
 
 class C {
 public:
