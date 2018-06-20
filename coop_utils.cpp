@@ -89,7 +89,7 @@ void coop::record::record_info::print_loop_mem_mat(
 namespace coop {
     namespace match {
         DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);
-		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
+		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(hasDefinition(), anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
 		StatementMatcher members_used_in_functions = memberExpr(hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
 
         StatementMatcher loops = anyOf(forStmt().bind(coop_loop_s), whileStmt().bind(coop_loop_s));

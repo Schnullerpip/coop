@@ -165,7 +165,7 @@ namespace coop{
                 cold_fields;
 
             //will hold the body of the record's destructor (if any) -> must be set manually!
-            const Decl *destructor_ptr = nullptr;
+            const CXXDestructorDecl *destructor_ptr = nullptr;
 
             //returns a list of members associated by a function for this record - if it does; else nullptr
             std::vector<const MemberExpr*>* isRelevantFunction(const clang::FunctionDecl* func);

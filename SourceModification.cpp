@@ -1,5 +1,6 @@
 #include "SourceModification.h"
 #include "clang/AST/DeclCXX.h"
+#include "coop_utils.hpp"
 #include <fstream>
 
 #define STRUCT_NAME "STRUCT_NAME"
@@ -97,12 +98,27 @@ namespace coop{
 
 
             //assemble all the struct's cold fields
+            size_t byte_count = 0;
             for(auto field : ri->cold_fields){
+
+                byte_count = coop::get_sizeof_in_byte(field);
+
                 ss << get_field_declaration_text(field);
                 if(*ri->cold_fields.end() != field){
                     ss << ";\n";
                 }
             }
+
+            //the freelist that is generated for each splitted record will only work if the relevant structs size is >= the size of
+            //the respective pointer to such a struct (thats how freelists work)
+            //so.. if we actually for example only extract a cold int (4B) then that ints memory space in the freelist wont fit 
+            //a pointer - make sure to bloat the struct up if neccessary...
+
+            //TODO
+            //PROBLEM -> we dont know the target-code's target's pointer size... 32bit, 64bit... 
+            //at this point we should probably ask the user for input... meh
+            coop::logger::log_stream << record_name << "'s cold struct's size is " << byte_count<< " Byte -> TODO is this enough space to hold a pointer on target system?";
+            coop::logger::out();
 
             replaceAll(tmpl_file_content, STRUCT_FIELDS, ss.str());
             ss.str("");
@@ -175,7 +191,7 @@ namespace coop{
         }
 
         void handle_free_list_fragmentation(cold_pod_representation *cpr, Rewriter *rewriter){
-            const Decl *dtor_decl = cpr->rec_info->destructor_ptr;
+            const CXXDestructorDecl *dtor_decl = cpr->rec_info->destructor_ptr;
 
             //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
             std::stringstream free_stmt;
@@ -186,28 +202,16 @@ namespace coop{
 
             if(dtor_decl){
                 const Stmt *dtor_body = cpr->rec_info->destructor_ptr->getBody();
-                if(dtor_body){
-                    auto stmts = dtor_body->children();
-                    if(*stmts.begin() == *stmts.end()){
-                        //the destructor's body is empty (yeah i know.. but it could happen...)
-                        std::stringstream dtor_string;
-                        dtor_string << "{\n" << free_stmt.str() << "}\n";
-                        rewriter->ReplaceText(dtor_body->getSourceRange(), dtor_string.str());
-                    }else{
-                        //insert the relevant code to the existing constructor
-                        rewriter->InsertTextBefore(dtor_body->getLocEnd(), "\n");
-                        rewriter->InsertTextBefore(dtor_body->getLocEnd(), free_stmt.str());
-                    }
+                if(dtor_body && dtor_decl->isUserProvided()){
+                    //insert the relevant code to the existing constructor
+                    rewriter->InsertTextBefore(dtor_body->getLocEnd(), "\n");
+                    rewriter->InsertTextBefore(dtor_body->getLocEnd(), free_stmt.str());
                 }else{
-                    //has no destructor decl
+                    //has no destructor body
                     const RecordDecl* record_decl = cpr->rec_info->record;
                     std::stringstream dtor_string;
                     dtor_string << "\n~" << record_decl->getNameAsString() << "()\n{\n" << free_stmt.str() << "}";
 
-                    //we need some kind of entrance point to place our generated destructor
-                    //since we should know for sure, that this record has fields (we are considering it for a hot/cold split after all)
-                    //we can safely assume that inserting the destructor after the fields should work as an entry point.
-                    //this might not produce nice code, but it should work - and I got that going for me
                     if(!record_decl->field_empty()){
                         rewriter->InsertTextBefore(record_decl->getLocEnd(), dtor_string.str());
                     }else{
