@@ -185,25 +185,20 @@ namespace coop{
                << ".free(coop_cold_data_ptr);\n";
 
             if(dtor_decl){
-                coop::logger::out("got declaration");
                 const Stmt *dtor_body = cpr->rec_info->destructor_ptr->getBody();
                 if(dtor_body){
-                    coop::logger::out("got body");
                     auto stmts = dtor_body->children();
                     if(*stmts.begin() == *stmts.end()){
-                        coop::logger::out("got empty body");
                         //the destructor's body is empty (yeah i know.. but it could happen...)
                         std::stringstream dtor_string;
                         dtor_string << "{\n" << free_stmt.str() << "}\n";
                         rewriter->ReplaceText(dtor_body->getSourceRange(), dtor_string.str());
                     }else{
-                        coop::logger::out("got non empty body");
                         //insert the relevant code to the existing constructor
                         rewriter->InsertTextBefore(dtor_body->getLocEnd(), "\n");
                         rewriter->InsertTextBefore(dtor_body->getLocEnd(), free_stmt.str());
                     }
                 }else{
-                    coop::logger::out("no destructor decl");
                     //has no destructor decl
                     const RecordDecl* record_decl = cpr->rec_info->record;
                     std::stringstream dtor_string;
