@@ -58,7 +58,7 @@ namespace coop{
             rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
         }
 
-        void create_cold_struct_for(coop::record::record_info *ri, cold_pod_representation *cpr, size_t size, const FunctionDecl *main_function_ptr, Rewriter *rewriter){
+        void create_cold_struct_for(coop::record::record_info *ri, cold_pod_representation *cpr, size_t size, Rewriter *rewriter){
             const RecordDecl* rd = ri->record;
             std::stringstream ss;
             std::ifstream ifs("src_mod_templates/cold_struct_template.cpp");
@@ -151,12 +151,10 @@ namespace coop{
         }
 
         void add_cpr_ref_to(
-            coop::record::record_info *ri,
             coop::src_mod::cold_pod_representation *cpr,
-            size_t size,
             Rewriter *rewriter)
         {
-            ASTContext &ast_context = ri->record->getASTContext();
+            ASTContext &ast_context = cpr->rec_info->record->getASTContext();
             rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
 
             std::ifstream ifs("src_mod_templates/intrusive_record_addition.cpp");
@@ -170,7 +168,7 @@ namespace coop{
 
             //this function will only be called if ri->cold_fields is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
-            rewriter->InsertTextBefore(ri->cold_fields[0]->getLocStart(), file_content);
+            rewriter->InsertTextBefore(cpr->rec_info->cold_fields[0]->getLocStart(), file_content);
         }
 
         void redirect_memExpr_to_cold_struct(const MemberExpr *mem_expr, cold_pod_representation *cpr, ASTContext *ast_context, Rewriter &rewriter)

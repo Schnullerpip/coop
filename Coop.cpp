@@ -31,6 +31,7 @@ static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 
 //function heads
 void recursive_weighting(coop::record::record_info *rec_info, const Stmt* child_loop);
+
 void recursive_loop_memberusage_aggregation(const Stmt* parent, const Stmt* child);
 
 void register_indirect_memberusage_in_loop_functioncalls(
@@ -46,14 +47,15 @@ void create_member_matrices(
 );
 void fill_function_member_matrix(coop::record::record_info &rec_ref,
 		std::vector<const FieldDecl*> *fields,
-		coop::FunctionRegistrationCallback &member_usage_callback);
+		coop::FunctionRegistrationCallback &member_usage_callback
+);
 void fill_loop_member_matrix(
 	std::vector<const FieldDecl*> *fields,
 	coop::record::record_info &rec_ref,
-	coop::LoopFunctionsCallback &loop_functions_callback);
+	coop::LoopFunctionsCallback &loop_functions_callback
+);
 
 
-Rewriter rewriter;
 //main start
 int main(int argc, const char **argv) {
 	//setup
@@ -77,6 +79,7 @@ int main(int argc, const char **argv) {
 			user_files.push_back(argv[i]);
 		}
 
+		Rewriter rewriter;
 		CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 		MatchFinder data_aggregation;
@@ -223,7 +226,7 @@ int main(int argc, const char **argv) {
 
 
 	coop::logger::depth--;
-	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::TODO);
+	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::DONE);
 
 	coop::logger::out("applying changes to source files", coop::logger::RUNNING);
 		//now that we know the hot/cold fields we now should process the source-file changes 
@@ -243,9 +246,12 @@ int main(int argc, const char **argv) {
 		finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
 
 		std::vector<coop::FindDestructor*> destructor_finders;
+		coop::FindInstantiations instantiation_finder;
 		for(int i = 0; i < num_records; ++i){
 			auto &rec = record_stats[i];
 			if(!rec.cold_fields.empty()){
+				instantiation_finder.add_record(rec.record);
+
 				coop::FindDestructor *df = new coop::FindDestructor(rec);
 				destructor_finders.push_back(df);
 				std::stringstream ss;
@@ -255,6 +261,9 @@ int main(int argc, const char **argv) {
 					df);
 			}
 		}
+
+		//to find the relevant instantiations
+		finder.addMatcher(cxxNewExpr().bind(coop_new_instantiation_s), &instantiation_finder);
 
 		//apply the matchers to all the ASTs
 		for(unsigned i = 0; i < ASTs.size(); ++i){
@@ -277,9 +286,16 @@ int main(int argc, const char **argv) {
 
 			//this check indicates wether or not the record has cold fields
 			if(!rec.cold_fields.empty()){
+				//create a struct that holds all the field-declarations for the cold fields
 				coop::src_mod::cold_pod_representation cpr;
+				
+				coop::src_mod::create_cold_struct_for(
+					&rec,
+					&cpr,
+					coop_standard_cold_data_allocation_size,
+					&rewriter);
 
-				//first of all get rid of all the cold field-declarations in the records
+				//get rid of all the cold field-declarations in the records
 				// AND
 				//change all appearances of the cold data fields to be referenced by the record's instance
 				for(auto field : rec.cold_fields){
@@ -290,25 +306,27 @@ int main(int argc, const char **argv) {
 					}
 				}
 
-				//create a struct that holds all the field-declarations for the cold fields
-				coop::src_mod::create_cold_struct_for(
-					&rec,
-					&cpr,
-					coop_standard_cold_data_allocation_size,
-					coop::FindMainFunction::main_function_ptr,
-					&rewriter);
-
 				//give the record a reference to an instance of this new cold_data_struct
 				coop::src_mod::add_cpr_ref_to(
-					&rec,
 					&cpr,
-					coop_standard_cold_data_allocation_size,
 					&rewriter);
 				
 				//modify/create the record's destructor, to handle free-list fragmentation
 				coop::src_mod::handle_free_list_fragmentation(
 					&cpr,
 					&rewriter);
+
+				//if this record is instantiated on the heap by using new anywhere, we
+				//should make sure, that the single instances are NOT distributed in memory but rather be allocated wit spatial locality
+				auto iter = coop::FindInstantiations::instantiations_map.find(rec.record);
+				if(iter != coop::FindInstantiations::instantiations_map.end()){
+					//this record is apparently being instantiated on the heap!
+					//make sure to replace those instantiations with something cachefriendly
+					auto &instantiations = iter->second;
+					for(auto instantiation : instantiations){
+						//TODO
+					}
+				}
 
 			}
 		}
@@ -442,7 +460,7 @@ void create_member_matrices(
 			rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 
 		coop::logger::depth--;
-		coop::logger::out("weighting nested loops", coop::logger::TODO);
+		coop::logger::out("weighting nested loops", coop::logger::DONE);
 		rec_count++;
 	}
 }

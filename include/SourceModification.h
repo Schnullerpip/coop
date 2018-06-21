@@ -40,13 +40,10 @@ namespace coop {
             coop::record::record_info*,
             cold_pod_representation*,
             size_t allocation_size,
-            const FunctionDecl* main_function_ptr,
             Rewriter*);
 
         void add_cpr_ref_to(
-            coop::record::record_info*,
             coop::src_mod::cold_pod_representation*,
-            size_t,
             Rewriter*);
 
         void redirect_memExpr_to_cold_struct(

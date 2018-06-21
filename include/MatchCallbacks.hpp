@@ -164,5 +164,15 @@ namespace coop {
         coop::record::record_info &rec;
         void run(const MatchFinder::MatchResult &result);
     };
+
+    class FindInstantiations : public MatchFinder::MatchCallback {
+    public:
+        static std::map<const RecordDecl*, std::vector<const CXXNewExpr*>> instantiations_map;
+
+        std::vector<const RecordDecl*> records_to_instantiate;
+        void add_record(const RecordDecl* r);
+    private:
+        void run(const MatchFinder::MatchResult &result);
+    };
 }
 #endif

@@ -20,7 +20,11 @@ std::map<const FunctionDecl*, int>
 std::map<const FieldDecl*, std::vector<coop::ColdFieldCallback::memExpr_ASTcon>>
     coop::ColdFieldCallback::cold_field_occurances = {};
 
-FunctionDecl const * coop::FindMainFunction::main_function_ptr = nullptr;
+FunctionDecl const *
+    coop::FindMainFunction::main_function_ptr = nullptr;
+
+std::map<const RecordDecl*, std::vector<const CXXNewExpr*>>
+    coop::FindInstantiations::instantiations_map = {};
 
 //method implementations
 const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
@@ -300,5 +304,25 @@ void coop::FindDestructor::run(const MatchFinder::MatchResult &result){
     const CXXDestructorDecl *destructor_decl = result.Nodes.getNodeAs<CXXDestructorDecl>(coop_destructor_s);
     if(destructor_decl){
         rec.destructor_ptr = destructor_decl;
+    }
+}
+
+void coop::FindInstantiations::add_record(const RecordDecl *p)
+{
+    records_to_instantiate.push_back(p);
+}
+
+void coop::FindInstantiations::run(const MatchFinder::MatchResult &result){
+    const CXXNewExpr* new_expr = result.Nodes.getNodeAs<CXXNewExpr>(coop_new_instantiation_s);
+    if(new_expr && !new_expr->isArray()){
+        const RecordDecl *record = new_expr->getAllocatedType().getTypePtr()->getAsCXXRecordDecl();
+        //get the new record Type's name
+        std::string records_name(record->getNameAsString());
+        //check if the instantiation of a new object is of relevant type
+        for(auto r : records_to_instantiate){
+            if(r->getNameAsString() == records_name){
+                coop::FindInstantiations::instantiations_map[record].push_back(new_expr);
+            }
+        }
     }
 }

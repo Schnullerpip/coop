@@ -44,6 +44,7 @@ using namespace clang::ast_matchers;
 #define coop_child_while_loop_s "child_while_loop_s"
 
 #define coop_destructor_s "destructor"
+#define coop_new_instantiation_s "new_usage"
 
 
 namespace coop{
