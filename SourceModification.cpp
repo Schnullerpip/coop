@@ -17,6 +17,7 @@
 #define REINTERPRET_NEXT "REINTERPRET_NEXT"
 #define FREE_PTR_NAME "FREE_PTR_NAME"
 #define FREE_LIST_NAME "FREE_LIST_NAME"
+#define free_list_name_default "coop_free_list"
 #define FREE_LIST_INSTANCE_COLD "FREE_LIST_INSTANCE_COLD"
 #define FREE_LIST_INSTANCE_HOT "FREE_LIST_INSTANCE_HOT"
 #define RECORD_NAME "RECORD_NAME"
@@ -65,13 +66,39 @@ namespace {
 namespace coop{
     namespace src_mod{
 
+        void include_free_list_hpp(const char *file_path, const char *include_path_to_add){
+            std::stringstream ss;
+            std::ifstream ifs(file_path);
+            std::string tmpl_file_content(
+                (std::istreambuf_iterator<char>(ifs)),
+                (std::istreambuf_iterator<char>()));
+            ss << "#include \"" << include_path_to_add << "\"\n" << tmpl_file_content;
+
+            std::ofstream ofs("coop_tmp");
+            if(ofs.is_open()){
+                ofs << ss.str();
+            }
+            ofs.close();
+
+            ss.str("");
+            ss << "cp coop_tmp " << file_path << " && rm coop_tmp";
+            system(ss.str().c_str());
+        }
+
         void remove_decl(const FieldDecl *fd, Rewriter *rewriter){
             rewriter->setSourceMgr(fd->getASTContext().getSourceManager(), fd->getASTContext().getLangOpts());
             auto src_range = fd->getSourceRange();
             rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
         }
 
-        void create_cold_struct_for(coop::record::record_info *ri, cold_pod_representation *cpr, size_t allocation_size_hot_data, size_t allocation_size_cold_data, Rewriter *rewriter){
+        void create_cold_struct_for(
+            coop::record::record_info *ri,
+            cold_pod_representation *cpr,
+            const char * user_include_path,
+            size_t allocation_size_hot_data,
+            size_t allocation_size_cold_data,
+            Rewriter *rewriter)
+        {
             const RecordDecl* rd = ri->record;
             std::stringstream ss;
             std::ifstream ifs("src_mod_templates/cold_struct_template.cpp");
@@ -144,7 +171,11 @@ namespace coop{
             ss.str("");
 
             replaceAll(tmpl_file_content, RECORD_NAME, cpr->record_name);
-            replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
+            if(user_include_path){
+                replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
+            }else{
+                replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
+            }
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
 
@@ -159,7 +190,7 @@ namespace coop{
             Rewriter *rewriter)
         {
             std::stringstream ss;
-            std::ifstream ifs("src_mod_templates/free_list_template.cpp");
+            std::ifstream ifs("src_mod_templates/free_list_template.tmpl");
             std::string tmpl_file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
@@ -196,6 +227,7 @@ namespace coop{
 
         void add_memory_allocation_to(
             coop::src_mod::cold_pod_representation *cpr,
+            const char * user_include_path,
             size_t allocation_size_cold_data,
             size_t allocation_size_hot_data,
             Rewriter *rewriter)
@@ -207,7 +239,11 @@ namespace coop{
 
             replaceAll(file_content, DATA_NAME, cpr->cold_data_container_name);
             replaceAll(file_content, RECORD_NAME, cpr->record_name);
-            replaceAll(file_content, FREE_LIST_NAME, cpr->free_list_name);
+            if(user_include_path){
+                replaceAll(file_content, FREE_LIST_NAME, free_list_name_default);
+            }else{
+                replaceAll(file_content, FREE_LIST_NAME, cpr->free_list_name);
+            }
             replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
             std::stringstream ss;
             ss << allocation_size_cold_data;

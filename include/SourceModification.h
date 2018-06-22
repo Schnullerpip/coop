@@ -35,6 +35,10 @@ namespace coop {
             coop::record::record_info *rec_info = nullptr;
         };
 
+        void include_free_list_hpp(
+            const char * file_path,
+            const char *include_path_to_add);
+
         void remove_decl(
             const clang::FieldDecl *fd,
             Rewriter *rewriter);
@@ -42,6 +46,7 @@ namespace coop {
         void create_cold_struct_for(
             coop::record::record_info*,
             cold_pod_representation*,
+            const char * user_include_path,
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data,
             Rewriter*);
@@ -57,6 +62,7 @@ namespace coop {
         
         void add_memory_allocation_to(
             coop::src_mod::cold_pod_representation *cpr,
+            const char * user_include_path,
             size_t allocation_size_cold_data,
             size_t allocation_size_hot_data,
             Rewriter *rewriter);

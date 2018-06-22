@@ -1,3 +1,9 @@
+#ifndef COOP_FREE_LIST_HPP
+#define COOP_FREE_LIST_HPP
+
+#include<new>
+#include<stddef.h>
+
 template<typename T, typename P>
 constexpr size_t max(){
 	return sizeof(T) > sizeof(P) ? sizeof(T) : sizeof(P);
@@ -56,3 +62,4 @@ public:
 	}
 };
 
+#endif

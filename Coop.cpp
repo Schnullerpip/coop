@@ -6,6 +6,7 @@
 #include "SystemStateInformation.hpp"
 #include "MatchCallbacks.hpp"
 #include "SourceModification.h"
+#include "InputArgs.h"
 
 using namespace clang::tooling;
 using namespace llvm;
@@ -57,9 +58,11 @@ void fill_loop_member_matrix(
 );
 
 
+
 //main start
 int main(int argc, const char **argv) {
 	//setup
+
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING)++;
 	coop::system::cache_credentials l1;
 		coop::logger::out("retreiving system information", coop::logger::RUNNING)++;
@@ -80,8 +83,18 @@ int main(int argc, const char **argv) {
 			user_files.push_back(argv[i]);
 		}
 
+		//register the tool's options
+		char const * user_include_path_root = nullptr;
+		coop::input::register_parametered_action("-i", [&user_include_path_root](const char * path)->void{
+			user_include_path_root = path;
+		});
+		int clang_relevant_options = coop::input::resolve_actions(argc, argv);
+
+		coop::logger::log_stream << "user's include root is: " << user_include_path_root;
+		coop::logger::out();
+
 		Rewriter rewriter;
-		CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
+		CommonOptionsParser OptionsParser(clang_relevant_options, argv, MyToolCategory);
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 		MatchFinder data_aggregation;
 
@@ -289,21 +302,27 @@ int main(int argc, const char **argv) {
 			if(!rec.cold_fields.empty()){
 				//create a struct that holds all the field-declarations for the cold fields
 				coop::src_mod::cold_pod_representation cpr;
-				
+
 				coop::src_mod::create_cold_struct_for(
 					&rec,
 					&cpr,
+					user_include_path_root,
 					coop_standard_hot_data_allocation_size,
 					coop_standard_cold_data_allocation_size,
 					&rewriter);
 				
-				coop::src_mod::create_free_list_for(
-					&cpr,
-					&rewriter
-				);
+				//if the user did not give us an include path that we can copy the free_list template into 
+				//then just inject it into the code directly
+				if(!user_include_path_root){
+					coop::src_mod::create_free_list_for(
+						&cpr,
+						&rewriter
+					);
+				}
 
 				coop::src_mod::add_memory_allocation_to(
 					&cpr,
+					user_include_path_root,
 					coop_standard_hot_data_allocation_size,
 					coop_standard_cold_data_allocation_size,
 					&rewriter
@@ -345,6 +364,20 @@ int main(int argc, const char **argv) {
 			}
 		}
 		rewriter.overwriteChangedFiles();
+
+
+		//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
+		if(user_include_path_root){
+			//add the freelist implementation to the user's include structure
+			{
+				std::stringstream ss;
+				ss << "cp src_mod_templates/free_list_template.hpp " << user_include_path_root << "/free_list_template.hpp";
+				system(ss.str().c_str());
+			}
+			for(auto f : user_files){
+				coop::src_mod::include_free_list_hpp(f, "free_list_template.hpp");
+			}
+		}
 	coop::logger::out("applying changes to source files", coop::logger::TODO);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
