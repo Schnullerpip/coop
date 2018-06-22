@@ -167,7 +167,7 @@ namespace coop {
 
     class FindInstantiations : public MatchFinder::MatchCallback {
     public:
-        static std::map<const RecordDecl*, std::vector<const CXXNewExpr*>> instantiations_map;
+        static std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>> instantiations_map;
 
         std::vector<const RecordDecl*> records_to_instantiate;
         void add_record(const RecordDecl* r);

@@ -18,6 +18,7 @@ namespace coop {
         struct cold_pod_representation{
             //name of the created struct
             std::string struct_name;
+            std::string record_name;
 
             //name of the address for the allocated space of the created struct
             std::string cold_data_container_name;
@@ -27,7 +28,9 @@ namespace coop {
             std::string union_name;
 
             //the nameof the freelist that comes with each generated struct
-            std::string free_list_name, free_list_instance_name;
+            std::string free_list_name,
+                        free_list_instance_name_cold,
+                        free_list_instance_name_hot;
 
             coop::record::record_info *rec_info = nullptr;
         };
@@ -39,12 +42,24 @@ namespace coop {
         void create_cold_struct_for(
             coop::record::record_info*,
             cold_pod_representation*,
-            size_t allocation_size,
+            size_t allocation_size_hot_data,
+            size_t allocation_size_cold_data,
             Rewriter*);
+        
+        void create_free_list_for(
+            cold_pod_representation*,
+            Rewriter *
+        );
 
         void add_cpr_ref_to(
             coop::src_mod::cold_pod_representation*,
             Rewriter*);
+        
+        void add_memory_allocation_to(
+            coop::src_mod::cold_pod_representation *cpr,
+            size_t allocation_size_cold_data,
+            size_t allocation_size_hot_data,
+            Rewriter *rewriter);
 
         void redirect_memExpr_to_cold_struct(
             const MemberExpr *mem_expr,
@@ -54,6 +69,12 @@ namespace coop {
 
         void handle_free_list_fragmentation(
             cold_pod_representation *cpr,
+            Rewriter *rewriter
+        );
+
+        void handle_new_instantiation(
+            cold_pod_representation *cpr,
+            std::pair<const CXXNewExpr *, ASTContext*> &expr_ctxt,
             Rewriter *rewriter
         );
     }

@@ -15,6 +15,7 @@ using namespace clang::ast_matchers;
 
 #define coop_hot_split_tolerance_f .17f
 #define coop_standard_cold_data_allocation_size 1024
+#define coop_standard_hot_data_allocation_size 1024
 
 // -------------- GENERAL STUFF ----------------------------------------------------------
 // Apply a custom category to all command-line options so that they are the
@@ -292,8 +293,21 @@ int main(int argc, const char **argv) {
 				coop::src_mod::create_cold_struct_for(
 					&rec,
 					&cpr,
+					coop_standard_hot_data_allocation_size,
 					coop_standard_cold_data_allocation_size,
 					&rewriter);
+				
+				coop::src_mod::create_free_list_for(
+					&cpr,
+					&rewriter
+				);
+
+				coop::src_mod::add_memory_allocation_to(
+					&cpr,
+					coop_standard_hot_data_allocation_size,
+					coop_standard_cold_data_allocation_size,
+					&rewriter
+				);
 
 				//get rid of all the cold field-declarations in the records
 				// AND
@@ -323,8 +337,8 @@ int main(int argc, const char **argv) {
 					//this record is apparently being instantiated on the heap!
 					//make sure to replace those instantiations with something cachefriendly
 					auto &instantiations = iter->second;
-					for(auto instantiation : instantiations){
-						//TODO
+					for(auto expr_contxt : instantiations){
+						coop::src_mod::handle_new_instantiation(&cpr, expr_contxt, &rewriter);
 					}
 				}
 

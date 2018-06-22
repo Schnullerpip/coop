@@ -23,7 +23,7 @@ std::map<const FieldDecl*, std::vector<coop::ColdFieldCallback::memExpr_ASTcon>>
 FunctionDecl const *
     coop::FindMainFunction::main_function_ptr = nullptr;
 
-std::map<const RecordDecl*, std::vector<const CXXNewExpr*>>
+std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>>
     coop::FindInstantiations::instantiations_map = {};
 
 //method implementations
@@ -321,7 +321,11 @@ void coop::FindInstantiations::run(const MatchFinder::MatchResult &result){
         //check if the instantiation of a new object is of relevant type
         for(auto r : records_to_instantiate){
             if(r->getNameAsString() == records_name){
-                coop::FindInstantiations::instantiations_map[record].push_back(new_expr);
+                std::pair<const CXXNewExpr*, ASTContext*> pair;
+                pair.first = new_expr;
+                pair.second = result.Context;
+                coop::FindInstantiations::instantiations_map[record].push_back(pair);
+                break;
             }
         }
     }
