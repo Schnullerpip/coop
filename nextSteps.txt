@@ -12,3 +12,10 @@
 	|_possible conflicts A&B; B&C; but A !& C -> any good solution? [actually bad cohesion...]
 6. apply changes
 7. Find each and every occurance of cold-member usages in the code and replace it with the referenced cold_struct.member replication
+
+
+TODO
+
+- appropriate data initialization for cold_data!
+- override delete operator for splitted record, to free free_list_instance(?!)
+

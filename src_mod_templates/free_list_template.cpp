@@ -1,3 +1,7 @@
+template<typename T, typename P>
+constexpr size_t max(){
+	return sizeof(T) > sizeof(P) ? sizeof(T) : sizeof(P);
+}
 
 template<typename T, size_t size>
 class FREE_LIST_NAME
@@ -12,9 +16,11 @@ class FREE_LIST_NAME
 		T * as_data_ptr;
 	} c_d;
 
+	char byte_data[size * max<T, void*>()];
+
     T * free_ptr = nullptr;
 public:
-	FREE_LIST_NAME(char * byte_data)
+	FREE_LIST_NAME()
     {
 		c_d.as_char_ptr = byte_data;
 		free_ptr = c_d.as_data_ptr;

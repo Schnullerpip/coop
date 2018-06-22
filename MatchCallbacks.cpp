@@ -314,7 +314,7 @@ void coop::FindInstantiations::add_record(const RecordDecl *p)
 
 void coop::FindInstantiations::run(const MatchFinder::MatchResult &result){
     const CXXNewExpr* new_expr = result.Nodes.getNodeAs<CXXNewExpr>(coop_new_instantiation_s);
-    if(new_expr && !new_expr->isArray()){
+    if(new_expr && !new_expr->isArray() && (new_expr->placement_arg_begin() == new_expr->placement_arg_end())){
         const RecordDecl *record = new_expr->getAllocatedType().getTypePtr()->getAsCXXRecordDecl();
         //get the new record Type's name
         std::string records_name(record->getNameAsString());
