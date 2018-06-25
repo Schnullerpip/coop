@@ -25,5 +25,8 @@ int main(){
 		}
 	}
 
+	delete a;
+	delete[] aa;
+
 	return 0;
 }
