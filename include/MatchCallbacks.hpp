@@ -165,11 +165,22 @@ namespace coop {
         void run(const MatchFinder::MatchResult &result);
     };
 
+    /*will register new calls */
     class FindInstantiations : public MatchFinder::MatchCallback {
     public:
         static std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>> instantiations_map;
 
         std::vector<const RecordDecl*> records_to_instantiate;
+        void add_record(const RecordDecl* r);
+    private:
+        void run(const MatchFinder::MatchResult &result);
+    };
+
+    /*will register delete calls */
+    class FindDeleteCalls : public MatchFinder::MatchCallback {
+    public:
+        static std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>> delete_calls_map;
+        std::vector<const RecordDecl*> record_deletions_to_find;
         void add_record(const RecordDecl* r);
     private:
         void run(const MatchFinder::MatchResult &result);

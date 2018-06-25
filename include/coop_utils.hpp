@@ -45,6 +45,7 @@ using namespace clang::ast_matchers;
 
 #define coop_destructor_s "destructor"
 #define coop_new_instantiation_s "new_usage"
+#define coop_deletion_s "delete"
 
 
 namespace coop{
@@ -65,6 +66,8 @@ namespace coop{
 
         extern StatementMatcher members_used_in_for_loops;
         extern StatementMatcher members_used_in_while_loops;
+
+        extern StatementMatcher delete_calls;
     }
 
 

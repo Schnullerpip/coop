@@ -83,6 +83,12 @@ namespace coop {
             std::pair<const CXXNewExpr *, ASTContext*> &expr_ctxt,
             Rewriter *rewriter
         );
+
+        void handle_delete_calls(
+            cold_pod_representation *cpr,
+            std::pair<const CXXDeleteExpr*, ASTContext*> &del_ctxt,
+            Rewriter *rewriter
+        );
     }
 }
 #endif

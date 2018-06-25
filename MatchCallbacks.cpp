@@ -26,6 +26,10 @@ FunctionDecl const *
 std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>>
     coop::FindInstantiations::instantiations_map = {};
 
+std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>>
+    coop::FindDeleteCalls::delete_calls_map = {};
+
+
 //method implementations
 const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
     const char* relevant_token;
@@ -321,12 +325,32 @@ void coop::FindInstantiations::run(const MatchFinder::MatchResult &result){
         //check if the instantiation of a new object is of relevant type
         for(auto r : records_to_instantiate){
             if(r->getNameAsString() == records_name){
-                std::pair<const CXXNewExpr*, ASTContext*> pair;
-                pair.first = new_expr;
-                pair.second = result.Context;
-                coop::FindInstantiations::instantiations_map[record].push_back(pair);
+                coop::FindInstantiations::instantiations_map[record].push_back({new_expr, result.Context});
                 break;
             }
+        }
+    }
+}
+
+void coop::FindDeleteCalls::add_record(const RecordDecl *rd)
+{
+    record_deletions_to_find.push_back(rd);
+}
+
+void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
+
+    const CXXDeleteExpr *delete_call = result.Nodes.getNodeAs<CXXDeleteExpr>(coop_deletion_s);
+    const DeclRefExpr *deleted_instance_ref = result.Nodes.getNodeAs<DeclRefExpr>(coop_class_s);
+
+    if(!delete_call->isArrayForm()){
+        const RecordDecl *record_decl = deleted_instance_ref->getBestDynamicClassType();
+        if(record_decl){
+            if(std::find(record_deletions_to_find.begin(), record_deletions_to_find.end(), record_decl) != record_deletions_to_find.end()){
+                //we found a relevant deletion
+                coop::FindDeleteCalls::delete_calls_map[record_decl].push_back({delete_call, result.Context});
+            }
+            coop::logger::log_stream << "deleted instance belongs to -> " << record_decl->getNameAsString().c_str();
+            coop::logger::out();
         }
     }
 }

@@ -106,6 +106,9 @@ namespace coop {
             memberExpr(hasAncestor(forStmt().bind(coop_loop_s))).bind(coop_member_s);
         StatementMatcher members_used_in_while_loops =
             memberExpr(hasAncestor(whileStmt().bind(coop_loop_s))).bind(coop_member_s);
+
+        StatementMatcher delete_calls =
+            cxxDeleteExpr(hasDescendant(declRefExpr().bind(coop_class_s))).bind(coop_deletion_s);
     }
 
 }

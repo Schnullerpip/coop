@@ -317,5 +317,16 @@ namespace coop{
             replaceAll(new_replacement, "new", ss.str());
             rewriter->ReplaceText(expr_ctxt.first->getSourceRange(), new_replacement);
         }
+
+        void handle_delete_calls(cold_pod_representation *cpr, std::pair<const CXXDeleteExpr*, ASTContext*> &del_ctxt, Rewriter *rewriter)
+        {
+            coop::logger::out("handle_delete_calls is called");
+            std::stringstream deletion_addition;
+            deletion_addition << "//marks the cold_data_freelist's cold_struct instance as reusable\n"
+                << cpr->free_list_instance_name_hot
+                << ".free(" << "TEST" << ");\n";
+
+            rewriter->InsertTextBefore(del_ctxt.first->getSourceRange().getBegin(), deletion_addition.str());
+        }
     }
 }

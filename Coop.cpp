@@ -256,15 +256,19 @@ int main(int argc, const char **argv) {
 		}
 
 		MatchFinder finder;
-		coop::FindMainFunction find_main_function_callback(&user_files);
-		finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
 
 		std::vector<coop::FindDestructor*> destructor_finders;
+		coop::FindMainFunction find_main_function_callback(&user_files);
 		coop::FindInstantiations instantiation_finder;
+		coop::FindDeleteCalls deletion_finder;
+
+		finder.addMatcher(coop::match::delete_calls, &deletion_finder);
+		finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
 		for(int i = 0; i < num_records; ++i){
 			auto &rec = record_stats[i];
-			if(!rec.cold_fields.empty()){
+			if(!rec.cold_fields.empty()){ //only consider splitted classes
 				instantiation_finder.add_record(rec.record);
+				deletion_finder.add_record(rec.record);
 
 				coop::FindDestructor *df = new coop::FindDestructor(rec);
 				destructor_finders.push_back(df);
@@ -351,28 +355,45 @@ int main(int argc, const char **argv) {
 
 				//if this record is instantiated on the heap by using new anywhere, we
 				//should make sure, that the single instances are NOT distributed in memory but rather be allocated wit spatial locality
-				auto iter = coop::FindInstantiations::instantiations_map.find(rec.record);
-				if(iter != coop::FindInstantiations::instantiations_map.end()){
-					//this record is apparently being instantiated on the heap!
-					//make sure to replace those instantiations with something cachefriendly
-					auto &instantiations = iter->second;
-					for(auto expr_contxt : instantiations){
-						coop::src_mod::handle_new_instantiation(&cpr, expr_contxt, &rewriter);
+				{
+					auto iter = coop::FindInstantiations::instantiations_map.find(rec.record);
+					if(iter != coop::FindInstantiations::instantiations_map.end()){
+						//this record is apparently being instantiated on the heap!
+						//make sure to replace those instantiations with something cachefriendly
+						auto &instantiations = iter->second;
+						for(auto expr_contxt : instantiations){
+							coop::src_mod::handle_new_instantiation(&cpr, expr_contxt, &rewriter);
+						}
 					}
 				}
-
+				//accordingly there should be calls to the delete operator (hopefully)
+				//if so we also need to modify those code bits, to make sure the free list wont fragment
+				//so whenever an element is deleted -> tell the freelist to make space for new data
+				{
+					auto iter  = coop::FindDeleteCalls::delete_calls_map.find(rec.record);
+					if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
+						coop::logger::out("delete_calls_map is not empty");
+						auto &deletions = iter->second;
+						for(auto del_contxt : deletions){
+							coop::logger::out("deletions is not empty");
+							coop::src_mod::handle_delete_calls(&cpr, del_contxt, &rewriter);
+						}
+					}
+				}
 			}
 		}
 		rewriter.overwriteChangedFiles();
 
 
 		//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
+		//so it can be included by the relevant files
 		if(user_include_path_root){
 			//add the freelist implementation to the user's include structure
 			{
 				std::stringstream ss;
 				ss << "cp src_mod_templates/free_list_template.hpp " << user_include_path_root << "/free_list_template.hpp";
-				system(ss.str().c_str());
+				coop::logger::log_stream << "system call returns: " << system(ss.str().c_str());
+				coop::logger::out();
 			}
 			for(auto f : user_files){
 				coop::src_mod::include_free_list_hpp(f, "free_list_template.hpp");
