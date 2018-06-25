@@ -21,38 +21,21 @@
 #define FREE_LIST_INSTANCE_COLD "FREE_LIST_INSTANCE_COLD"
 #define FREE_LIST_INSTANCE_HOT "FREE_LIST_INSTANCE_HOT"
 #define RECORD_NAME "RECORD_NAME"
+#define FIELD_INITIALIZERS "FIELD_INITIALIZERS"
 
 namespace {
-    std::string get_field_declaration_text(const Decl *fd){
-        ASTContext &ast_context = fd->getASTContext();
-        SourceManager &src_man = ast_context.getSourceManager();
-
-        clang::SourceLocation b(fd->getLocStart()), _e(fd->getLocEnd());
-        clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context.getLangOpts()));
-
-        return std::string(src_man.getCharacterData(b),
-            src_man.getCharacterData(e)-src_man.getCharacterData(b));
-    }
-
-    std::string get_memberExpr_text(const MemberExpr* mem_expr, ASTContext *ast_context){
+    template<typename T>
+    std::string get_text(T* t, ASTContext *ast_context){
         SourceManager &src_man = ast_context->getSourceManager();
 
-        clang::SourceLocation b(mem_expr->getLocStart()), _e(mem_expr->getLocEnd());
+        clang::SourceLocation b(t->getLocStart()), _e(t->getLocEnd());
         clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context->getLangOpts()));
 
         return std::string(src_man.getCharacterData(b),
             src_man.getCharacterData(e)-src_man.getCharacterData(b));
     }
 
-    std::string get_cxxNewExpr_text(const CXXNewExpr* expr, ASTContext *ast_context){
-        SourceManager &src_man = ast_context->getSourceManager();
 
-        clang::SourceLocation b(expr->getLocStart()), _e(expr->getLocEnd());
-        clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context->getLangOpts()));
-
-        return std::string(src_man.getCharacterData(b),
-            src_man.getCharacterData(e)-src_man.getCharacterData(b));
-    }
 
     void replaceAll(std::string &data,const std::string &to_replace,const std::string &replace_with){
         size_t pos = data.find(to_replace);
@@ -138,29 +121,36 @@ namespace coop{
             ss.str("");
 
             //assemble all the struct's cold fields
-            size_t byte_count = 0;
-            for(auto field : ri->cold_fields){
+            {
+                std::vector<const FieldDecl*> in_class_initialized_fields;
+                std::stringstream initializer;
+                    initializer << ":";
+                for(auto field : ri->cold_fields){
 
-                byte_count = coop::get_sizeof_in_byte(field);
+                    ss << get_text(field, &field->getASTContext());
+                    if(*ri->cold_fields.end() != field){
+                        ss << ";\n";
+                    }
 
-                ss << get_field_declaration_text(field);
-                if(*ri->cold_fields.end() != field){
-                    ss << ";\n";
+                    if(field->hasInClassInitializer()){
+                        in_class_initialized_fields.push_back(field);
+                    }
                 }
+
+                for(size_t i = 0; i < in_class_initialized_fields.size(); ++i){
+                    const FieldDecl *field = in_class_initialized_fields[i];
+                    initializer << field->getNameAsString() << "("
+                        << get_text(field->getInClassInitializer(), &field->getASTContext()) << ")";
+                    if(i < in_class_initialized_fields.size()-1){
+                        initializer << ", ";
+                    }
+                }
+                replaceAll(tmpl_file_content, FIELD_INITIALIZERS, initializer.str());
+
             }
             replaceAll(tmpl_file_content, STRUCT_NAME, cpr->struct_name);
             replaceAll(tmpl_file_content, STRUCT_FIELDS, ss.str());
             ss.str("");
-            //the freelist that is generated for each splitted record will only work if the relevant structs size is >= the size of
-            //the respective pointer to such a struct (thats how freelists work)
-            //so.. if we actually for example only extract a cold int (4B) then that ints memory space in the freelist wont fit 
-            //a pointer - make sure to bloat the struct up if neccessary...
-
-            //TODO
-            //PROBLEM -> we dont know the target-code's target's pointer size... 32bit, 64bit... 
-            //at this point we should probably ask the user for input... meh
-            coop::logger::log_stream << cpr->record_name << "'s cold struct's size is " << byte_count<< " Byte -> TODO is this enough space to hold a pointer on target system?";
-            coop::logger::out();
 
             replaceAll(tmpl_file_content, DATA_NAME, cpr->cold_data_container_name);
 
@@ -262,7 +252,7 @@ namespace coop{
 
         void redirect_memExpr_to_cold_struct(const MemberExpr *mem_expr, cold_pod_representation *cpr, ASTContext *ast_context, Rewriter &rewriter)
         {
-            std::string usage_text = get_memberExpr_text(mem_expr, ast_context);
+            std::string usage_text = get_text(mem_expr, ast_context);
 
             std::string field_decl_name = mem_expr->getMemberDecl()->getNameAsString();
 
@@ -283,6 +273,8 @@ namespace coop{
             //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
             std::stringstream free_stmt;
             free_stmt << "//marks the cold_data_freelist's cold_struct instance as reusable\n"
+               << "coop_cold_data_ptr->~"
+               << cpr->struct_name << "();\n"
                << cpr->free_list_instance_name_cold
                << ".free(coop_cold_data_ptr);\n";
 
@@ -311,7 +303,7 @@ namespace coop{
 
         void handle_new_instantiation(cold_pod_representation *cpr, std::pair<const CXXNewExpr*, ASTContext*> &expr_ctxt, Rewriter *rewriter)
         {
-            std::string new_replacement = get_cxxNewExpr_text(expr_ctxt.first, expr_ctxt.second);
+            std::string new_replacement = get_text(expr_ctxt.first, expr_ctxt.second);
             coop::logger::log_stream << "FOUND heap instantiation -> " << new_replacement;
             coop::logger::out();
             std::stringstream ss;
@@ -322,13 +314,20 @@ namespace coop{
 
         void handle_delete_calls(cold_pod_representation *cpr, std::pair<const CXXDeleteExpr*, ASTContext*> &del_ctxt, Rewriter *rewriter)
         {
-            coop::logger::out("handle_delete_calls is called");
-            std::stringstream deletion_addition;
-            deletion_addition << "//marks the cold_data_freelist's cold_struct instance as reusable\n"
-                << cpr->free_list_instance_name_hot
-                << ".free(" << "TEST" << ");\n";
 
-            rewriter->InsertTextBefore(del_ctxt.first->getSourceRange().getBegin(), deletion_addition.str());
+            std::string instance_name = get_text(del_ctxt.first->getArgument(), del_ctxt.second);
+            
+            std::stringstream deletion_replacement;
+            deletion_replacement << instance_name << "->~" << cpr->record_name << "();";
+            rewriter->ReplaceText(del_ctxt.first->getSourceRange(), deletion_replacement.str());
+
+            //after the actual destruction of the instance we need to inform the freelist
+            std::stringstream deletion_addition;
+            deletion_addition << "\n//marks the cold_data_freelist's cold_struct instance as reusable\n"
+                << cpr->free_list_instance_name_hot
+                << ".free(" << instance_name << ")";
+
+            rewriter->InsertTextAfterToken(del_ctxt.first->getSourceRange().getEnd(), deletion_addition.str());
         }
     }
 }

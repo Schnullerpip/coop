@@ -53,7 +53,7 @@ public:
 
 	void free(T *p)
     {
-		if(p <= c_d.as_data_ptr && p < c_d.as_data_ptr+size*sizeof(T)){
+		if(p >= c_d.as_data_ptr && p < c_d.as_data_ptr+size*sizeof(T)){
 			T * tmp_ptr = free_ptr;
 			free_ptr = p;
 			_ptr = free_ptr;
