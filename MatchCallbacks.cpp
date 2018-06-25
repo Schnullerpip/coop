@@ -349,8 +349,6 @@ void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
                 //we found a relevant deletion
                 coop::FindDeleteCalls::delete_calls_map[record_decl].push_back({delete_call, result.Context});
             }
-            coop::logger::log_stream << "deleted instance belongs to -> " << record_decl->getNameAsString().c_str();
-            coop::logger::out();
         }
     }
 }

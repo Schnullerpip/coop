@@ -82,7 +82,9 @@ namespace coop{
 
             ss.str("");
             ss << "cp coop_tmp " << file_path << " && rm coop_tmp";
-            system(ss.str().c_str());
+            if(system(ss.str().c_str()) != 0){
+                coop::logger::out("[ERROR]::SourceModification.cpp -> call to system failed!");
+            }
         }
 
         void remove_decl(const FieldDecl *fd, Rewriter *rewriter){
@@ -228,8 +230,8 @@ namespace coop{
         void add_memory_allocation_to(
             coop::src_mod::cold_pod_representation *cpr,
             const char * user_include_path,
-            size_t allocation_size_cold_data,
             size_t allocation_size_hot_data,
+            size_t allocation_size_cold_data,
             Rewriter *rewriter)
         {
             std::ifstream ifs("src_mod_templates/memory_allocation_template.cpp");

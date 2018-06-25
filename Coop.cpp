@@ -1,6 +1,8 @@
 //clang sources
 #include "clang/AST/DeclCXX.h"
 #include "clang/Rewrite/Core/Rewriter.h"
+//std libraries
+#include <stdlib.h>
 //custom includes
 #include "coop_utils.hpp"
 #include "SystemStateInformation.hpp"
@@ -85,13 +87,24 @@ int main(int argc, const char **argv) {
 
 		//register the tool's options
 		char const * user_include_path_root = nullptr;
-		coop::input::register_parametered_action("-i", [&user_include_path_root](const char * path)->void{
+		size_t hot_data_allocation_size_in_byte = coop_standard_hot_data_allocation_size;
+		size_t cold_data_allocation_size_in_byte = coop_standard_cold_data_allocation_size;
+
+		coop::input::register_parametered_action("-h", [&hot_data_allocation_size_in_byte](const char *size){
+			hot_data_allocation_size_in_byte = atoi(size);
+		});
+
+		coop::input::register_parametered_action("-c", [&cold_data_allocation_size_in_byte](const char *size){
+			cold_data_allocation_size_in_byte = atoi(size);
+		});
+
+		coop::input::register_parametered_action("-i", [&user_include_path_root](const char * path){
 			user_include_path_root = path;
+			coop::logger::log_stream << "user's given include path is: " << user_include_path_root;
+			coop::logger::out();
 		});
 		int clang_relevant_options = coop::input::resolve_actions(argc, argv);
 
-		coop::logger::log_stream << "user's include root is: " << user_include_path_root;
-		coop::logger::out();
 
 		Rewriter rewriter;
 		CommonOptionsParser OptionsParser(clang_relevant_options, argv, MyToolCategory);
@@ -311,8 +324,8 @@ int main(int argc, const char **argv) {
 					&rec,
 					&cpr,
 					user_include_path_root,
-					coop_standard_hot_data_allocation_size,
-					coop_standard_cold_data_allocation_size,
+					hot_data_allocation_size_in_byte,
+					cold_data_allocation_size_in_byte,
 					&rewriter);
 				
 				//if the user did not give us an include path that we can copy the free_list template into 
@@ -327,8 +340,8 @@ int main(int argc, const char **argv) {
 				coop::src_mod::add_memory_allocation_to(
 					&cpr,
 					user_include_path_root,
-					coop_standard_hot_data_allocation_size,
-					coop_standard_cold_data_allocation_size,
+					hot_data_allocation_size_in_byte,
+					cold_data_allocation_size_in_byte,
 					&rewriter
 				);
 
@@ -372,10 +385,8 @@ int main(int argc, const char **argv) {
 				{
 					auto iter  = coop::FindDeleteCalls::delete_calls_map.find(rec.record);
 					if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
-						coop::logger::out("delete_calls_map is not empty");
 						auto &deletions = iter->second;
 						for(auto del_contxt : deletions){
-							coop::logger::out("deletions is not empty");
 							coop::src_mod::handle_delete_calls(&cpr, del_contxt, &rewriter);
 						}
 					}

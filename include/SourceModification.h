@@ -63,8 +63,8 @@ namespace coop {
         void add_memory_allocation_to(
             coop::src_mod::cold_pod_representation *cpr,
             const char * user_include_path,
-            size_t allocation_size_cold_data,
             size_t allocation_size_hot_data,
+            size_t allocation_size_cold_data,
             Rewriter *rewriter);
 
         void redirect_memExpr_to_cold_struct(
