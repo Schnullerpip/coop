@@ -29,28 +29,56 @@ std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*
 std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>>
     coop::FindDeleteCalls::delete_calls_map = {};
 
+//function implementations
+std::stringstream file_regex;
+size_t file_inputs = 0;
+void coop::match::add_file_as_match_condition(const char * file_name){
+    if(file_inputs > 0){
+        file_regex << "|";
+    }
+    file_regex << file_name;
+    ++file_inputs;
+}
+std::string coop::match::get_file_regex_match_condition(const char * path_addition){
+    std::stringstream return_string;
+    return_string << "(" << file_regex.str() << "|" << path_addition << "/*" << ")";
+    return return_string.str();
+}
+
 
 //method implementations
-const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
-    const char* relevant_token;
-    for(relevant_token = file_path+strlen(file_path); *(relevant_token-1) != '/' && *(relevant_token-1) != '\\'; --relevant_token);
-    for(auto file : *user_source_files){
-        if(strcmp(file, relevant_token)){
-            return nullptr;
-        }
+const char * coop::CoopMatchCallback::get_relevant_token(const char *file){
+    const char *relevant_token;
+    size_t iterations = 0;
+    for(relevant_token = file+strlen(file); *(relevant_token-1) != '/' && *(relevant_token-1) != '\\' && iterations < strlen(file); --relevant_token){
+        ++iterations;
     }
     return relevant_token;
 }
+const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
+    const char *relevant_token, *relevant_token_user_file;
+    for(relevant_token = file_path+strlen(file_path); *(relevant_token-1) != '/' && *(relevant_token-1) != '\\'; --relevant_token);
 
-bool coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
-    const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getForLoc()).str().c_str());
-    *dest << "[F:" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
-    return fileName != nullptr;
+    for(auto file : *user_source_files){
+        size_t iterations = 0;
+        for(relevant_token_user_file = file+strlen(file); *(relevant_token_user_file-1) != '/' && *(relevant_token_user_file-1) != '\\' && iterations < strlen(file); --relevant_token_user_file){
+            ++iterations;
+        }
+
+        if(strcmp(relevant_token_user_file, relevant_token) == 0){
+            return relevant_token;
+        }
+    }
+    return nullptr;
 }
-bool coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
-    const char *fileName = is_user_source_file(srcMgr->getFilename(loop->getWhileLoc()).str().c_str());
+
+void coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
+    const char *fileName = get_relevant_token(srcMgr->getFilename(loop->getForLoc()).str().c_str());
+    *dest << "[F:" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
+}
+void coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
+    const char *fileName = get_relevant_token(srcMgr->getFilename(loop->getWhileLoc()).str().c_str());
     *dest << "[W:" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
-    return fileName != nullptr;
 }
 
 
@@ -68,15 +96,19 @@ void coop::MemberRegistrationCallback::printData(){
 
 void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &result){
     const RecordDecl* rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
-    const FieldDecl* member = result.Nodes.getNodeAs<FieldDecl>(coop_member_s);
 
-    SourceManager &srcMgr = result.Context->getSourceManager();
-    if(is_user_source_file(srcMgr.getFilename(rd->getLocation()).str().c_str())){
-        coop::logger::log_stream << "found '" << member->getNameAsString().c_str()
-            << "'(" << coop::get_sizeof_in_bits(member) << " bit) in record '"
-            << rd->getNameAsString().c_str() << "'" ;
-        coop::logger::out();
-        class_fields_map[rd].push_back(member);
+    coop::logger::log_stream << "found " << rd->getNameAsString().c_str();
+    coop::logger::out();
+
+    if(!rd->field_empty()){
+        for(auto f : rd->fields()){
+            coop::logger::log_stream << "found '" << f->getNameAsString().c_str()
+                << "'(" << coop::get_sizeof_in_bits(f) << " bit) in record '"
+                << rd->getNameAsString().c_str();
+            coop::logger::out();
+
+            class_fields_map[rd].push_back(f);
+        }
     }
 }
 
@@ -85,19 +117,16 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
     const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
     const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
 
-    SourceManager &srcMgr = result.Context->getSourceManager();
-    if(is_user_source_file(srcMgr.getFilename(func->getLocation()).str().c_str())){
-        coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
-        coop::logger::out();
+    coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
+    coop::logger::out();
 
-        //cache the function node for later traversal
-        relevant_functions[func].push_back(memExpr);
+    //cache the function node for later traversal
+    relevant_functions[func].push_back(memExpr);
 
-        static int function_idx = 0;
-        if(function_idx_mapping.count(func) == 0){
-            //the key is not present in the map yet
-            function_idx_mapping[func] = function_idx++;
-        }
+    static int function_idx = 0;
+    if(function_idx_mapping.count(func) == 0){
+        //the key is not present in the map yet
+        function_idx_mapping[func] = function_idx++;
     }
 }
 
@@ -120,34 +149,23 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     std::stringstream ss;
 
     const FunctionDecl *function_call = result.Nodes.getNodeAs<CallExpr>(coop_function_call_s)->getDirectCallee();
-    if(function_call){
-        if(!is_user_source_file(srcMgr.getFilename(function_call->getLocation()).str().c_str())){
-            return;
-        }
-    }else{
+    if(!function_call){
         return;
     }
 
     coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called in a " ;
 
     Stmt const *loop;
-    bool is_in_user_file = false;
     bool isForLoop = true;
     if(const ForStmt* for_loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
         loop = for_loop;
-        is_in_user_file = get_for_loop_identifier(for_loop, &srcMgr, &ss);
+        get_for_loop_identifier(for_loop, &srcMgr, &ss);
         coop::logger::log_stream << "for";
     }else if(const WhileStmt* while_loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
         loop = while_loop;
-        is_in_user_file = get_while_loop_identifier(while_loop, &srcMgr, &ss);
+        get_while_loop_identifier(while_loop, &srcMgr, &ss);
         isForLoop = false;
         coop::logger::log_stream << "while";
-    }
-
-    //check if the loop occurs in a user file
-    if(!is_in_user_file){
-        coop::logger::clear();
-        return;
     }
 
     coop::logger::log_stream << "Loop " << ss.str();
@@ -183,21 +201,17 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
 
     if(const ForStmt* loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
-        if(is_user_source_file(srcMgr.getFilename(loop->getForLoc()).str().c_str())){
-            loop_stmt = loop;
-            get_for_loop_identifier(loop, &srcMgr, &ss);
-            coop::logger::log_stream << "found 'for loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
-            coop::logger::out();
-        }
+        loop_stmt = loop;
+        get_for_loop_identifier(loop, &srcMgr, &ss);
+        coop::logger::log_stream << "found 'for loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+        coop::logger::out();
     }else if(const WhileStmt* loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
-        if(is_user_source_file(srcMgr.getFilename(loop->getWhileLoc()).str().c_str())){
-            loop_stmt = loop;
-            isForLoop = false;
-            get_while_loop_identifier(loop, &srcMgr, &ss);
-            coop::logger::log_stream << "found 'while loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
-            coop::logger::out();
-        }
+        loop_stmt = loop;
+        isForLoop = false;
+        get_while_loop_identifier(loop, &srcMgr, &ss);
+        coop::logger::log_stream << "found 'while loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+        coop::logger::out();
     }
     auto loop_info = &loops[loop_stmt];
     loop_info->identifier = ss.str();
@@ -253,8 +267,6 @@ void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
     SourceManager &srcMgr = result.Context->getSourceManager();
     std::stringstream ss;
     Stmt const * parent_loop, *child_loop;
-
-    //TODO determine wether or not this loop is inside a user file
 
     //find child loop
     if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)){

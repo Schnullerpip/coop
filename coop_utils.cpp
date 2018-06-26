@@ -82,33 +82,3 @@ void coop::record::record_info::print_loop_mem_mat(
     };
     print_mat(&loop_mem, getNam, getIdx);
 }
-
-
-
-//namespace specific
-namespace coop {
-    namespace match {
-        DeclarationMatcher classes = cxxRecordDecl(hasDefinition(), unless(isUnion())).bind(coop_class_s);
-		DeclarationMatcher members = fieldDecl(hasAncestor(cxxRecordDecl(hasDefinition(), anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
-		StatementMatcher members_used_in_functions = memberExpr(hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
-
-        StatementMatcher loops = anyOf(forStmt().bind(coop_loop_s), whileStmt().bind(coop_loop_s));
-        StatementMatcher loops_distinct = anyOf(forStmt().bind(coop_for_loop_s), whileStmt().bind(coop_while_loop_s));
-        StatementMatcher loops_distinct_each = eachOf(forStmt().bind(coop_for_loop_s), whileStmt().bind(coop_while_loop_s));
-        StatementMatcher function_calls_in_loops = callExpr(hasAncestor(loops)).bind(coop_function_call_s);
-
-        auto has_loop_ancestor = hasAncestor(loops_distinct_each);
-        StatementMatcher nested_loops =
-            eachOf(forStmt(has_loop_ancestor).bind(coop_child_for_loop_s),
-                  whileStmt(has_loop_ancestor).bind(coop_child_while_loop_s));
-
-        StatementMatcher members_used_in_for_loops =
-            memberExpr(hasAncestor(forStmt().bind(coop_loop_s))).bind(coop_member_s);
-        StatementMatcher members_used_in_while_loops =
-            memberExpr(hasAncestor(whileStmt().bind(coop_loop_s))).bind(coop_member_s);
-
-        StatementMatcher delete_calls =
-            cxxDeleteExpr(hasDescendant(declRefExpr().bind(coop_class_s))).bind(coop_deletion_s);
-    }
-
-}

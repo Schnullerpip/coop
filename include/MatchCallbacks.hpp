@@ -5,17 +5,21 @@
 
 namespace coop {
 
+    namespace match {
+        void add_file_as_match_condition(const char *);
+        std::string get_file_regex_match_condition(const char * patch_addition = "");
+    }
+
     class CoopMatchCallback : public MatchFinder::MatchCallback {
         public:
             CoopMatchCallback(const std::vector<const char*> *user_source_files)
                 :user_source_files(user_source_files){}
         protected:
-            const char* is_user_source_file(const char* file_path);
+            const char * is_user_source_file(const char *file_path);
+            const char * get_relevant_token(const char *file_path);
 
-            //returns true if the loop is in a user specified file
-            bool get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream*);
-            //returns true if the loop is in a user specified file
-            bool get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream*);
+            void get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream*);
+            void get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream*);
         private:
             const std::vector<const char*> *user_source_files;
             virtual void run(const MatchFinder::MatchResult &result) = 0;

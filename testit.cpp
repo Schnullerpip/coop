@@ -1,14 +1,7 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<time.h>
-
-struct A {
-	float velocity = 0;
-	float mass = 65;
-	const char * name = "julian";
-	unsigned height = 170;
-	unsigned age = 26;
-};
+#include"testit.hpp"
 
 
 int main(){

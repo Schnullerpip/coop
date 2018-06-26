@@ -17,8 +17,8 @@ using namespace clang;
 using namespace clang::ast_matchers;
 
 #define coop_hot_split_tolerance_f .17f
-#define coop_standard_cold_data_allocation_size 1024
-#define coop_standard_hot_data_allocation_size 1024
+#define coop_default_cold_data_allocation_size 1024
+#define coop_default_hot_data_allocation_size 1024
 
 // -------------- GENERAL STUFF ----------------------------------------------------------
 // Apply a custom category to all command-line options so that they are the
@@ -66,15 +66,17 @@ int main(int argc, const char **argv) {
 	//setup
 
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING)++;
-	coop::system::cache_credentials l1;
 		coop::logger::out("retreiving system information", coop::logger::RUNNING)++;
+
+			coop::system::cache_credentials l1;
 			l1 = coop::system::get_d_cache_info(coop::system::IDX_0);
 			coop::logger::log_stream
-				<< "for cache lvl: " << l1.lvl
+				<< "cache lvl: " << l1.lvl
 				<< " size: " << l1.size
-				<< "KB lineSize: " << l1.line_size << "B";
+				<< "KB; lineSize: " << l1.line_size << "B";
 			coop::logger::out()--;
 		coop::logger::out("retreiving system information", coop::logger::DONE);
+
 		//registering all the user specified files
 		std::vector<const char*> user_files;
 		for(int i = 1; i < argc; ++i){
@@ -83,12 +85,13 @@ int main(int argc, const char **argv) {
 			coop::logger::log_stream << "adding " << argv[i] << " to user source files";
 			coop::logger::out();
 			user_files.push_back(argv[i]);
+			coop::match::add_file_as_match_condition(argv[i]);
 		}
 
 		//register the tool's options
-		char const * user_include_path_root = nullptr;
-		size_t hot_data_allocation_size_in_byte = coop_standard_hot_data_allocation_size;
-		size_t cold_data_allocation_size_in_byte = coop_standard_cold_data_allocation_size;
+		const char * user_include_path_root;
+		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size;
+		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size;
 
 		coop::input::register_parametered_action("-h", [&hot_data_allocation_size_in_byte](const char *size){
 			hot_data_allocation_size_in_byte = atoi(size);
@@ -103,13 +106,39 @@ int main(int argc, const char **argv) {
 			coop::logger::log_stream << "user's given include path is: " << user_include_path_root;
 			coop::logger::out();
 		});
-		int clang_relevant_options = coop::input::resolve_actions(argc, argv);
+		int clang_relevant_options =
+			coop::input::resolve_actions(argc, argv);
+
+		//with the user files defined as a match regex we can now initialize the matchers
+		auto file_match = isExpansionInFileMatching(coop::match::get_file_regex_match_condition(user_include_path_root));
+
+        DeclarationMatcher classes = cxxRecordDecl(file_match, hasDefinition(), unless(isUnion())).bind(coop_class_s);
+		DeclarationMatcher members = fieldDecl(file_match, hasAncestor(cxxRecordDecl(hasDefinition(), anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
+		StatementMatcher members_used_in_functions = memberExpr(file_match, hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
+
+        StatementMatcher loops = anyOf(forStmt(file_match).bind(coop_loop_s), whileStmt(file_match).bind(coop_loop_s));
+        StatementMatcher loops_distinct = anyOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
+        StatementMatcher loops_distinct_each = eachOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
+        StatementMatcher function_calls_in_loops = callExpr(file_match, hasAncestor(loops)).bind(coop_function_call_s);
+
+        auto has_loop_ancestor = hasAncestor(loops_distinct_each);
+        StatementMatcher nested_loops =
+            eachOf(forStmt(file_match, has_loop_ancestor).bind(coop_child_for_loop_s),
+                  whileStmt(file_match, has_loop_ancestor).bind(coop_child_while_loop_s));
+
+        StatementMatcher members_used_in_for_loops =
+            memberExpr(hasAncestor(forStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
+        StatementMatcher members_used_in_while_loops =
+            memberExpr(hasAncestor(whileStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
+
+        StatementMatcher delete_calls =
+            cxxDeleteExpr(file_match, hasDescendant(declRefExpr().bind(coop_class_s))).bind(coop_deletion_s);
+
 
 
 		Rewriter rewriter;
 		CommonOptionsParser OptionsParser(clang_relevant_options, argv, MyToolCategory);
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
-		MatchFinder data_aggregation;
 
 		coop::MemberRegistrationCallback member_registration_callback(&user_files);
 		coop::FunctionRegistrationCallback member_usage_callback(&user_files);
@@ -118,22 +147,28 @@ int main(int argc, const char **argv) {
 		coop::LoopMemberUsageCallback while_loop_member_usages_callback(&user_files);
 		coop::NestedLoopCallback nested_loop_callback(&user_files);
 
-		data_aggregation.addMatcher(coop::match::members, &member_registration_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_functions, &member_usage_callback);
-		data_aggregation.addMatcher(coop::match::function_calls_in_loops, &loop_functions_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_for_loops, &for_loop_member_usages_callback);
-		data_aggregation.addMatcher(coop::match::members_used_in_while_loops, &while_loop_member_usages_callback);
-		data_aggregation.addMatcher(coop::match::nested_loops, &nested_loop_callback);
+		MatchFinder data_aggregation;
+		data_aggregation.addMatcher(classes, &member_registration_callback);
+		data_aggregation.addMatcher(members_used_in_functions, &member_usage_callback);
+		data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
+		data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
+		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
+		data_aggregation.addMatcher(nested_loops, &nested_loop_callback);
+
+		//generate the ASTs for each compilation unit
+		std::vector<std::unique_ptr<ASTUnit>> ASTs;
+		int system_state = Tool.buildASTs(ASTs);
 	coop::logger::depth--;
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
 
 		//run the matchers/callbacks
-		std::vector<std::unique_ptr<ASTUnit>> ASTs;
-		Tool.buildASTs(ASTs);
 		for(unsigned i = 0; i < ASTs.size(); ++i){
+			coop::logger::log_stream << "matching against AST[" << i << "]";
+			coop::logger::out()++;
 			data_aggregation.matchAST(ASTs[i]->getASTContext());
+			coop::logger::depth--;
 		}
 
 		//auto front_end_action = newFrontendActionFactory(&data_aggregation).get();
@@ -275,7 +310,7 @@ int main(int argc, const char **argv) {
 		coop::FindInstantiations instantiation_finder;
 		coop::FindDeleteCalls deletion_finder;
 
-		finder.addMatcher(coop::match::delete_calls, &deletion_finder);
+		finder.addMatcher(delete_calls, &deletion_finder);
 		finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
 		for(int i = 0; i < num_records; ++i){
 			auto &rec = record_stats[i];
@@ -398,24 +433,25 @@ int main(int argc, const char **argv) {
 
 		//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
 		//so it can be included by the relevant files
-		if(user_include_path_root){
-			//add the freelist implementation to the user's include structure
-			{
-				std::stringstream ss;
-				ss << "cp src_mod_templates/free_list_template.hpp " << user_include_path_root << "/free_list_template.hpp";
-				coop::logger::log_stream << "system call returns: " << system(ss.str().c_str());
-				coop::logger::out();
-			}
-			for(auto f : user_files){
-				coop::src_mod::include_free_list_hpp(f, "free_list_template.hpp");
-			}
-		}
-	coop::logger::out("applying changes to source files", coop::logger::TODO);
+		//if(user_include_path_root && system_state != 1){
+		//	//add the freelist implementation to the user's include structure
+		//	{
+		//		std::stringstream ss;
+		//		ss << "cp src_mod_templates/free_list_template.hpp " << user_include_path_root << "/free_list_template.hpp";
+		//		if(system(ss.str().c_str()) != 0){
+		//			coop::logger::out("[ERROR] can't touch user files for injecting #include code");
+		//		}
+		//	}
+		//	for(auto f : user_files){
+		//		coop::src_mod::include_free_list_hpp(f, "free_list_template.hpp");
+		//	}
+		//}
+	coop::logger::out("applying changes to source files", coop::logger::DONE);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
 		delete[] record_field_weight_average;
 		delete[] record_stats;
-	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::TODO);
+	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::DONE);
 
 
 	return 0;
@@ -425,6 +461,7 @@ void register_indirect_memberusage_in_loop_functioncalls(
 	coop::LoopFunctionsCallback &loop_functions_callback,
 	coop::FunctionRegistrationCallback &member_usage_callback)
 {
+	std::map<const Stmt*, coop::loop_credentials> purified_map; 
 	//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
 	//get rid of those entries 
 	for(auto fc : loop_functions_callback.loop_function_calls){
@@ -438,9 +475,9 @@ void register_indirect_memberusage_in_loop_functioncalls(
 				break;
 			}
 		}
-		if(remove){
-			loop_functions_callback.loop_function_calls.erase(fc.first);
-		}else {
+		if(!remove){
+			//put it in the new map, that the callback will receive
+			purified_map[fc.first] = fc.second;
 			//since this loop is relevant to us - check wether it is registered yet
 			//if it doesnt directly associate members it wont be registered yet
 			auto iter = coop::LoopMemberUsageCallback::loops.find(fc.first);
@@ -452,6 +489,8 @@ void register_indirect_memberusage_in_loop_functioncalls(
 			}
 		}
 	}
+
+	loop_functions_callback.loop_function_calls = purified_map;
 }
 
 void create_member_matrices(

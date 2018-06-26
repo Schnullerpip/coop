@@ -50,7 +50,7 @@ namespace coop{
         }
 
         size_t& out(const char* msg, Progress_Status status){
-            return out(msg, status == RUNNING ? " [running]\n" : status == DONE ? " [done]\n" : " [TODO!!!!!!!]\n");
+            return out(msg, status == RUNNING ? " [RUNNING]\n" : status == DONE ? " [DONE]\n" : " [TODO!!!!!!!]\n");
         }
 
         /*outs message to out_stream informing the user of a progress*/

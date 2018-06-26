@@ -55,22 +55,6 @@ namespace coop{
     //will return the sizeof value for a field in Byte
     int get_sizeof_in_byte(const FieldDecl* field);
 
-    namespace match {
-        extern DeclarationMatcher classes;
-		extern DeclarationMatcher members;
-		extern StatementMatcher members_used_in_functions;
-
-        extern StatementMatcher loops;
-        extern StatementMatcher function_calls_in_loops;
-        extern StatementMatcher nested_loops;
-
-        extern StatementMatcher members_used_in_for_loops;
-        extern StatementMatcher members_used_in_while_loops;
-
-        extern StatementMatcher delete_calls;
-    }
-
-
     template <class T, typename P>
     struct data_matrix {
         //the matrix mapping which T uses which P 
