@@ -16,9 +16,9 @@ using namespace llvm;
 using namespace clang;
 using namespace clang::ast_matchers;
 
-#define coop_hot_split_tolerance_f .17f
 #define coop_default_cold_data_allocation_size 1024
 #define coop_default_hot_data_allocation_size 1024
+#define coop_hot_split_tolerance_f .17f
 
 #define coop_free_list_template_file_name "free_list_template.hpp"
 
@@ -65,7 +65,36 @@ void fill_loop_member_matrix(
 
 //main start
 int main(int argc, const char **argv) {
-	//setup
+		//register the tool's options
+		float hot_split_tolerance = .17f;
+		{
+			auto split_tolerance_action = [&hot_split_tolerance](const char *size){hot_split_tolerance = atof(size);};
+			coop::input::register_parametered_action("--split-tolerance", "split tolerance factor --split-tolreance <float>", split_tolerance_action);
+			coop::input::register_parametered_action("-st", "split tolerance factor -st <float>", split_tolerance_action);
+		}
+
+		bool apply_changes_to_source_files = true;
+		coop::input::register_parameterless_action("--analyze-only", "will not let coop do any actual changes to the source files", [&apply_changes_to_source_files](){apply_changes_to_source_files = false;});
+
+		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size;
+		coop::input::register_parametered_action("--hot-size", "set the default allocation size for hot data --hot-size <int>", [&hot_data_allocation_size_in_byte](const char *size){
+			hot_data_allocation_size_in_byte = atoi(size);
+		});
+
+		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size;
+		coop::input::register_parametered_action("--cold-size", "set the default allocation size for cold data --cold-size <int>", [&cold_data_allocation_size_in_byte](const char *size){
+			cold_data_allocation_size_in_byte = atoi(size);
+		});
+
+		const char * user_include_path_root = nullptr;
+		coop::input::register_parametered_action("-i", "coop will place files in this include root -i <directory_path>", [&user_include_path_root](const char * path){
+			user_include_path_root = path;
+			coop::logger::log_stream << "user's given include path is: " << user_include_path_root;
+			coop::logger::out();
+		});
+
+		int clang_relevant_options =
+			coop::input::resolve_actions(argc, argv);
 
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING)++;
 		coop::logger::out("retreiving system information", coop::logger::RUNNING)++;
@@ -89,27 +118,6 @@ int main(int argc, const char **argv) {
 			user_files.push_back(argv[i]);
 			coop::match::add_file_as_match_condition(argv[i]);
 		}
-
-		//register the tool's options
-		const char * user_include_path_root = nullptr;
-		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size;
-		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size;
-
-		coop::input::register_parametered_action("-h", [&hot_data_allocation_size_in_byte](const char *size){
-			hot_data_allocation_size_in_byte = atoi(size);
-		});
-
-		coop::input::register_parametered_action("-c", [&cold_data_allocation_size_in_byte](const char *size){
-			cold_data_allocation_size_in_byte = atoi(size);
-		});
-
-		coop::input::register_parametered_action("-i", [&user_include_path_root](const char * path){
-			user_include_path_root = path;
-			coop::logger::log_stream << "user's given include path is: " << user_include_path_root;
-			coop::logger::out();
-		});
-		int clang_relevant_options =
-			coop::input::resolve_actions(argc, argv);
 
 		//with the user files defined as a match regex we can now initialize the matchers
 		auto file_match = isExpansionInFileMatching(coop::match::get_file_regex_match_condition(user_include_path_root));
@@ -271,18 +279,17 @@ int main(int argc, const char **argv) {
 			//the record's field_weights is now ordered (descending) so the moment we find a cold value
 			//the following  values will also be cold
 			coop::logger::depth++;
-			float tolerant_average = average * (1-coop_hot_split_tolerance_f);
+			float tolerant_average = average * (1-hot_split_tolerance);
 			coop::logger::log_stream << rec.record->getNameAsString().c_str() << "'s tolerant average is: " << tolerant_average;
 			coop::logger::out();
 			for(auto f_w : rec.field_weights){
-				coop::logger::log_stream << f_w.first->getNameAsString().c_str() << " is a ";
 				if(f_w.second < tolerant_average){
 					rec.cold_fields.push_back(f_w.first);
-					coop::logger::log_stream << "cold ";
+					coop::logger::log_stream << "[cold] " ;
 				}else{
-					coop::logger::log_stream << "hot ";
+					coop::logger::log_stream << "[hot] ";
 				}
-				coop::logger::log_stream << "field!";
+				coop::logger::log_stream << f_w.first->getNameAsString();
 				coop::logger::out();
 			}
 			coop::logger::depth--;
@@ -292,169 +299,171 @@ int main(int argc, const char **argv) {
 	coop::logger::depth--;
 	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::DONE);
 
-	coop::logger::out("applying changes to source files", coop::logger::RUNNING);
-		//now that we know the hot/cold fields we now should process the source-file changes 
+	if(apply_changes_to_source_files){
+		coop::logger::out("applying changes to source files", coop::logger::RUNNING);
+			//now that we know the hot/cold fields we now should process the source-file changes 
 
-		/*first we need another data aggregation
-			- find all occurances of cold member usages
-			- find the relevant record's destructors
-		*/
-		std::vector<const FieldDecl*> cold_members;
-		for(int i = 0; i < num_records; ++i){
-			auto &recs_cold_fields = record_stats[i].cold_fields;
-			cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
-		}
-
-		MatchFinder finder;
-
-		std::vector<coop::FindDestructor*> destructor_finders;
-		coop::FindMainFunction find_main_function_callback(&user_files);
-		coop::FindInstantiations instantiation_finder;
-		coop::FindDeleteCalls deletion_finder;
-
-		finder.addMatcher(delete_calls, &deletion_finder);
-		finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
-		for(int i = 0; i < num_records; ++i){
-			auto &rec = record_stats[i];
-			if(!rec.cold_fields.empty()){ //only consider splitted classes
-				instantiation_finder.add_record(rec.record);
-				deletion_finder.add_record(rec.record);
-
-				coop::FindDestructor *df = new coop::FindDestructor(rec);
-				destructor_finders.push_back(df);
-				std::stringstream ss;
-				ss << "~" << rec.record->getNameAsString();
-				finder.addMatcher(
-					cxxDestructorDecl(hasName(ss.str().c_str())).bind(coop_destructor_s),
-					df);
+			/*first we need another data aggregation
+				- find all occurances of cold member usages
+				- find the relevant record's destructors
+			*/
+			std::vector<const FieldDecl*> cold_members;
+			for(int i = 0; i < num_records; ++i){
+				auto &recs_cold_fields = record_stats[i].cold_fields;
+				cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
 			}
-		}
 
-		//to find the relevant instantiations
-		finder.addMatcher(cxxNewExpr().bind(coop_new_instantiation_s), &instantiation_finder);
+			MatchFinder finder;
 
-		//apply the matchers to all the ASTs
-		for(unsigned i = 0; i < ASTs.size(); ++i){
-			MatchFinder find_cold_member_usages;
-			ASTContext &ast_context = ASTs[i]->getASTContext();
-			coop::ColdFieldCallback cold_field_callback(&user_files, &cold_members, &ast_context);
-			find_cold_member_usages.addMatcher(memberExpr().bind(coop_member_s), &cold_field_callback);
+			std::vector<coop::FindDestructor*> destructor_finders;
+			coop::FindMainFunction find_main_function_callback(&user_files);
+			coop::FindInstantiations instantiation_finder;
+			coop::FindDeleteCalls deletion_finder;
 
-			find_cold_member_usages.matchAST(ast_context);
-			finder.matchAST(ast_context);
-		}
-		//destroy the destructor finders
-		for(auto df : destructor_finders){
-			delete df;
-		}
+			finder.addMatcher(delete_calls, &deletion_finder);
+			finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
+			for(int i = 0; i < num_records; ++i){
+				auto &rec = record_stats[i];
+				if(!rec.cold_fields.empty()){ //only consider splitted classes
+					instantiation_finder.add_record(rec.record);
+					deletion_finder.add_record(rec.record);
 
-		//traverse all the records -> if they have cold fields -> split them in a cold_data struct
-		std::set<const char *> files_that_need_to_include_free_list;
-		for(int i = 0; i < num_records; ++i){
-			coop::record::record_info &rec = record_stats[i];
+					coop::FindDestructor *df = new coop::FindDestructor(rec);
+					destructor_finders.push_back(df);
+					std::stringstream ss;
+					ss << "~" << rec.record->getNameAsString();
+					finder.addMatcher(
+						cxxDestructorDecl(hasName(ss.str().c_str())).bind(coop_destructor_s),
+						df);
+				}
+			}
 
-			//this check indicates wether or not the record has cold fields
-			if(!rec.cold_fields.empty()){
-				coop::src_mod::cold_pod_representation cpr;
+			//to find the relevant instantiations
+			finder.addMatcher(cxxNewExpr().bind(coop_new_instantiation_s), &instantiation_finder);
 
-				//create a struct that holds all the field-declarations for the cold fields
-				coop::src_mod::create_cold_struct_for(
-					&rec,
-					&cpr,
-					user_include_path_root,
-					hot_data_allocation_size_in_byte,
-					cold_data_allocation_size_in_byte,
-					&rewriter);
-				
-				//if the user did not give us an include path that we can copy the free_list template into 
-				//then just inject it into the code directly
-				if(!user_include_path_root){
-					coop::src_mod::create_free_list_for(
+			//apply the matchers to all the ASTs
+			for(unsigned i = 0; i < ASTs.size(); ++i){
+				MatchFinder find_cold_member_usages;
+				ASTContext &ast_context = ASTs[i]->getASTContext();
+				coop::ColdFieldCallback cold_field_callback(&user_files, &cold_members, &ast_context);
+				find_cold_member_usages.addMatcher(memberExpr().bind(coop_member_s), &cold_field_callback);
+
+				find_cold_member_usages.matchAST(ast_context);
+				finder.matchAST(ast_context);
+			}
+			//destroy the destructor finders
+			for(auto df : destructor_finders){
+				delete df;
+			}
+
+			//traverse all the records -> if they have cold fields -> split them in a cold_data struct
+			std::set<const char *> files_that_need_to_include_free_list;
+			for(int i = 0; i < num_records; ++i){
+				coop::record::record_info &rec = record_stats[i];
+
+				//this check indicates wether or not the record has cold fields
+				if(!rec.cold_fields.empty()){
+					coop::src_mod::cold_pod_representation cpr;
+
+					//create a struct that holds all the field-declarations for the cold fields
+					coop::src_mod::create_cold_struct_for(
+						&rec,
 						&cpr,
+						user_include_path_root,
+						hot_data_allocation_size_in_byte,
+						cold_data_allocation_size_in_byte,
+						&rewriter);
+					
+					//if the user did not give us an include path that we can copy the free_list template into 
+					//then just inject it into the code directly
+					if(!user_include_path_root){
+						coop::src_mod::create_free_list_for(
+							&cpr,
+							&rewriter
+						);
+					}
+
+					coop::src_mod::add_memory_allocation_to(
+						&cpr,
+						user_include_path_root,
+						hot_data_allocation_size_in_byte,
+						cold_data_allocation_size_in_byte,
 						&rewriter
 					);
-				}
 
-				coop::src_mod::add_memory_allocation_to(
-					&cpr,
-					user_include_path_root,
-					hot_data_allocation_size_in_byte,
-					cold_data_allocation_size_in_byte,
-					&rewriter
-				);
-
-				//get rid of all the cold field-declarations in the records
-				// AND
-				//change all appearances of the cold data fields to be referenced by the record's instance
-				for(auto field : rec.cold_fields){
-					coop::src_mod::remove_decl(field, &rewriter);
-					auto field_usages = coop::ColdFieldCallback::cold_field_occurances[field];
-					for(auto field_usage : field_usages){
-						coop::src_mod::redirect_memExpr_to_cold_struct(field_usage.mem_expr_ptr, &cpr, field_usage.ast_context_ptr, rewriter);
-					}
-				}
-
-				//give the record a reference to an instance of this new cold_data_struct
-				coop::src_mod::add_cpr_ref_to(
-					&cpr,
-					&rewriter);
-				
-				//modify/create the record's destructor, to handle free-list fragmentation
-				coop::src_mod::handle_free_list_fragmentation(
-					&cpr,
-					&rewriter);
-
-				//if this record is instantiated on the heap by using new anywhere, we
-				//should make sure, that the single instances are NOT distributed in memory but rather be allocated wit spatial locality
-				{
-					auto iter = coop::FindInstantiations::instantiations_map.find(rec.record);
-					if(iter != coop::FindInstantiations::instantiations_map.end()){
-						//this record is apparently being instantiated on the heap!
-						//make sure to replace those instantiations with something cachefriendly
-						auto &instantiations = iter->second;
-						for(auto expr_contxt : instantiations){
-							coop::src_mod::handle_new_instantiation(&cpr, expr_contxt, &rewriter);
+					//get rid of all the cold field-declarations in the records
+					// AND
+					//change all appearances of the cold data fields to be referenced by the record's instance
+					for(auto field : rec.cold_fields){
+						coop::src_mod::remove_decl(field, &rewriter);
+						auto field_usages = coop::ColdFieldCallback::cold_field_occurances[field];
+						for(auto field_usage : field_usages){
+							coop::src_mod::redirect_memExpr_to_cold_struct(field_usage.mem_expr_ptr, &cpr, field_usage.ast_context_ptr, rewriter);
 						}
 					}
-				}
-				//accordingly there should be calls to the delete operator (hopefully)
-				//if so we also need to modify those code bits, to make sure the free list wont fragment
-				//so whenever an element is deleted -> tell the freelist to make space for new data
-				{
-					auto iter  = coop::FindDeleteCalls::delete_calls_map.find(rec.record);
-					if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
-						auto &deletions = iter->second;
-						for(auto del_contxt : deletions){
-							coop::src_mod::handle_delete_calls(&cpr, del_contxt, &rewriter);
+
+					//give the record a reference to an instance of this new cold_data_struct
+					coop::src_mod::add_cpr_ref_to(
+						&cpr,
+						&rewriter);
+					
+					//modify/create the record's destructor, to handle free-list fragmentation
+					coop::src_mod::handle_free_list_fragmentation(
+						&cpr,
+						&rewriter);
+
+					//if this record is instantiated on the heap by using new anywhere, we
+					//should make sure, that the single instances are NOT distributed in memory but rather be allocated wit spatial locality
+					{
+						auto iter = coop::FindInstantiations::instantiations_map.find(rec.record);
+						if(iter != coop::FindInstantiations::instantiations_map.end()){
+							//this record is apparently being instantiated on the heap!
+							//make sure to replace those instantiations with something cachefriendly
+							auto &instantiations = iter->second;
+							for(auto expr_contxt : instantiations){
+								coop::src_mod::handle_new_instantiation(&cpr, expr_contxt, &rewriter);
+							}
 						}
 					}
-				}
+					//accordingly there should be calls to the delete operator (hopefully)
+					//if so we also need to modify those code bits, to make sure the free list wont fragment
+					//so whenever an element is deleted -> tell the freelist to make space for new data
+					{
+						auto iter  = coop::FindDeleteCalls::delete_calls_map.find(rec.record);
+						if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
+							auto &deletions = iter->second;
+							for(auto del_contxt : deletions){
+								coop::src_mod::handle_delete_calls(&cpr, del_contxt, &rewriter);
+							}
+						}
+					}
 
-				//mark the record's translation unit as one, that needs to include the free_list_template implementation
-				files_that_need_to_include_free_list.insert(member_registration_callback.class_file_map[rec.record].c_str());
+					//mark the record's translation unit as one, that needs to include the free_list_template implementation
+					files_that_need_to_include_free_list.insert(member_registration_callback.class_file_map[rec.record].c_str());
+				}
 			}
-		}
-		rewriter.overwriteChangedFiles();
+			rewriter.overwriteChangedFiles();
 
 
-		//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
-		//so it can be included by the relevant files
-		if(user_include_path_root && system_state != 1)
-		{
-			//add the freelist implementation to the user's include structure
+			//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
+			//so it can be included by the relevant files
+			if(user_include_path_root && system_state != 1)
 			{
-				std::stringstream ss;
-				ss << "cp src_mod_templates/" << coop_free_list_template_file_name << " "
-					<< user_include_path_root << (user_include_path_root[strlen(user_include_path_root)-1] == '/' ? "" : "/") << coop_free_list_template_file_name;
-				if(system(ss.str().c_str()) != 0){
-					coop::logger::out("[ERROR] can't touch user files for injecting #include code");
+				//add the freelist implementation to the user's include structure
+				{
+					std::stringstream ss;
+					ss << "cp src_mod_templates/" << coop_free_list_template_file_name << " "
+						<< user_include_path_root << (user_include_path_root[strlen(user_include_path_root)-1] == '/' ? "" : "/") << coop_free_list_template_file_name;
+					if(system(ss.str().c_str()) != 0){
+						coop::logger::out("[ERROR] can't touch user files for injecting #include code");
+					}
+				}
+				for(auto f : files_that_need_to_include_free_list){
+					coop::src_mod::include_free_list_hpp(f, coop_free_list_template_file_name);
 				}
 			}
-			for(auto f : files_that_need_to_include_free_list){
-				coop::src_mod::include_free_list_hpp(f, coop_free_list_template_file_name);
-			}
-		}
-	coop::logger::out("applying changes to source files", coop::logger::DONE);
+		coop::logger::out("applying changes to source files", coop::logger::DONE);
+	}
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
 		delete[] record_field_weight_average;
