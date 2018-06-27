@@ -15,7 +15,6 @@ namespace coop {
             CoopMatchCallback(const std::vector<const char*> *user_source_files)
                 :user_source_files(user_source_files){}
         protected:
-            const char * is_user_source_file(const char *file_path);
             const char * get_relevant_token(const char *file_path);
 
             void get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream*);
@@ -30,6 +29,7 @@ namespace coop {
     class MemberRegistrationCallback : public coop::CoopMatchCallback {
     public:
         std::map<const RecordDecl*, std::vector<const FieldDecl*>> class_fields_map;
+        std::map<const RecordDecl*, std::string> class_file_map;
 
         MemberRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 

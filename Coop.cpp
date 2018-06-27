@@ -20,6 +20,8 @@ using namespace clang::ast_matchers;
 #define coop_default_cold_data_allocation_size 1024
 #define coop_default_hot_data_allocation_size 1024
 
+#define coop_free_list_template_file_name "free_list_template.hpp"
+
 // -------------- GENERAL STUFF ----------------------------------------------------------
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
@@ -347,14 +349,15 @@ int main(int argc, const char **argv) {
 		}
 
 		//traverse all the records -> if they have cold fields -> split them in a cold_data struct
+		std::set<const char *> files_that_need_to_include_free_list;
 		for(int i = 0; i < num_records; ++i){
 			coop::record::record_info &rec = record_stats[i];
 
 			//this check indicates wether or not the record has cold fields
 			if(!rec.cold_fields.empty()){
-				//create a struct that holds all the field-declarations for the cold fields
 				coop::src_mod::cold_pod_representation cpr;
 
+				//create a struct that holds all the field-declarations for the cold fields
 				coop::src_mod::create_cold_struct_for(
 					&rec,
 					&cpr,
@@ -426,6 +429,9 @@ int main(int argc, const char **argv) {
 						}
 					}
 				}
+
+				//mark the record's translation unit as one, that needs to include the free_list_template implementation
+				files_that_need_to_include_free_list.insert(member_registration_callback.class_file_map[rec.record].c_str());
 			}
 		}
 		rewriter.overwriteChangedFiles();
@@ -433,19 +439,21 @@ int main(int argc, const char **argv) {
 
 		//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
 		//so it can be included by the relevant files
-		//if(user_include_path_root && system_state != 1){
-		//	//add the freelist implementation to the user's include structure
-		//	{
-		//		std::stringstream ss;
-		//		ss << "cp src_mod_templates/free_list_template.hpp " << user_include_path_root << "/free_list_template.hpp";
-		//		if(system(ss.str().c_str()) != 0){
-		//			coop::logger::out("[ERROR] can't touch user files for injecting #include code");
-		//		}
-		//	}
-		//	for(auto f : user_files){
-		//		coop::src_mod::include_free_list_hpp(f, "free_list_template.hpp");
-		//	}
-		//}
+		if(user_include_path_root && system_state != 1)
+		{
+			//add the freelist implementation to the user's include structure
+			{
+				std::stringstream ss;
+				ss << "cp src_mod_templates/" << coop_free_list_template_file_name << " "
+					<< user_include_path_root << (user_include_path_root[strlen(user_include_path_root)-1] == '/' ? "" : "/") << coop_free_list_template_file_name;
+				if(system(ss.str().c_str()) != 0){
+					coop::logger::out("[ERROR] can't touch user files for injecting #include code");
+				}
+			}
+			for(auto f : files_that_need_to_include_free_list){
+				coop::src_mod::include_free_list_hpp(f, coop_free_list_template_file_name);
+			}
+		}
 	coop::logger::out("applying changes to source files", coop::logger::DONE);
 
 	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);

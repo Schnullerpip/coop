@@ -163,6 +163,7 @@ namespace coop{
             ss.str("");
 
             replaceAll(tmpl_file_content, RECORD_NAME, cpr->record_name);
+
             if(user_include_path){
                 replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
             }else{

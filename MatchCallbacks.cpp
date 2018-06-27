@@ -41,7 +41,7 @@ void coop::match::add_file_as_match_condition(const char * file_name){
 }
 std::string coop::match::get_file_regex_match_condition(const char * path_addition){
     std::stringstream return_string;
-    return_string << "(" << file_regex.str() << "|" << path_addition << "/*" << ")";
+    return_string << "(" << file_regex.str() << "|" << path_addition << (path_addition[strlen(path_addition)] == '/' ? "" : "/") << "*" << ")";
     return return_string.str();
 }
 
@@ -54,22 +54,6 @@ const char * coop::CoopMatchCallback::get_relevant_token(const char *file){
         ++iterations;
     }
     return relevant_token;
-}
-const char * coop::CoopMatchCallback::is_user_source_file(const char* file_path){
-    const char *relevant_token, *relevant_token_user_file;
-    for(relevant_token = file_path+strlen(file_path); *(relevant_token-1) != '/' && *(relevant_token-1) != '\\'; --relevant_token);
-
-    for(auto file : *user_source_files){
-        size_t iterations = 0;
-        for(relevant_token_user_file = file+strlen(file); *(relevant_token_user_file-1) != '/' && *(relevant_token_user_file-1) != '\\' && iterations < strlen(file); --relevant_token_user_file){
-            ++iterations;
-        }
-
-        if(strcmp(relevant_token_user_file, relevant_token) == 0){
-            return relevant_token;
-        }
-    }
-    return nullptr;
 }
 
 void coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
@@ -97,8 +81,12 @@ void coop::MemberRegistrationCallback::printData(){
 void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &result){
     const RecordDecl* rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
 
-    coop::logger::log_stream << "found " << rd->getNameAsString().c_str();
+    std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str().c_str();
+
+    coop::logger::log_stream << "found " << rd->getNameAsString().c_str() << " in file: " << get_relevant_token(fileName.c_str());
     coop::logger::out();
+
+    class_file_map[rd] = fileName;
 
     if(!rd->field_empty()){
         for(auto f : rd->fields()){
@@ -106,6 +94,7 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
                 << "'(" << coop::get_sizeof_in_bits(f) << " bit) in record '"
                 << rd->getNameAsString().c_str();
             coop::logger::out();
+
 
             class_fields_map[rd].push_back(f);
         }
