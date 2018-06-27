@@ -41,7 +41,11 @@ void coop::match::add_file_as_match_condition(const char * file_name){
 }
 std::string coop::match::get_file_regex_match_condition(const char * path_addition){
     std::stringstream return_string;
-    return_string << "(" << file_regex.str() << "|" << path_addition << (path_addition[strlen(path_addition)] == '/' ? "" : "/") << "*" << ")";
+    return_string << "(" << file_regex.str();
+    if(path_addition){
+         return_string << "|" << path_addition << (path_addition[strlen(path_addition)] == '/' ? "" : "/") << "*";
+    }
+    return_string  << ")";
     return return_string.str();
 }
 

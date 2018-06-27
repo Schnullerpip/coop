@@ -91,7 +91,7 @@ int main(int argc, const char **argv) {
 		}
 
 		//register the tool's options
-		const char * user_include_path_root;
+		const char * user_include_path_root = nullptr;
 		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size;
 		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size;
 
