@@ -148,7 +148,7 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
 
     coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called in a " ;
 
-    Stmt const *loop;
+    const Stmt *loop;
     bool isForLoop = true;
     if(const ForStmt* for_loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
         loop = for_loop;

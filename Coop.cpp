@@ -68,8 +68,6 @@ void fill_loop_member_matrix(
 
 float field_weight_depth_factor = coop_field_weight_depth_factor_f;
 
-
-
 //main start
 int main(int argc, const char **argv) {
 		//register the tool's options
