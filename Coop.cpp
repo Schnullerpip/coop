@@ -16,9 +16,10 @@ using namespace llvm;
 using namespace clang;
 using namespace clang::ast_matchers;
 
-#define coop_default_cold_data_allocation_size 1024
-#define coop_default_hot_data_allocation_size 1024
+#define coop_default_cold_data_allocation_size_i 1024
+#define coop_default_hot_data_allocation_size_i 1024
 #define coop_hot_split_tolerance_f .17f
+#define coop_field_weight_depth_factor_f 10.f
 
 #define coop_free_list_template_file_name "free_list_template.hpp"
 
@@ -36,9 +37,13 @@ static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 
 
 //function heads
-void recursive_weighting(coop::record::record_info *rec_info, const Stmt* child_loop);
+void recursive_weighting(
+	coop::record::record_info *rec_info,
+	const Stmt* child_loop);
 
-void recursive_loop_memberusage_aggregation(const Stmt* parent, const Stmt* child);
+void recursive_loop_memberusage_aggregation(
+	const Stmt* parent,
+	const Stmt* child);
 
 void register_indirect_memberusage_in_loop_functioncalls(
 	coop::LoopFunctionsCallback &loop_functions_callback,
@@ -61,6 +66,8 @@ void fill_loop_member_matrix(
 	coop::LoopFunctionsCallback &loop_functions_callback
 );
 
+float field_weight_depth_factor = coop_field_weight_depth_factor_f;
+
 
 
 //main start
@@ -76,14 +83,18 @@ int main(int argc, const char **argv) {
 		bool apply_changes_to_source_files = true;
 		coop::input::register_parameterless_action("--analyze-only", "will not let coop do any actual changes to the source files", [&apply_changes_to_source_files](){apply_changes_to_source_files = false;});
 
-		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size;
+		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size_i;
 		coop::input::register_parametered_action("--hot-size", "set the default allocation size for hot data --hot-size <int>", [&hot_data_allocation_size_in_byte](const char *size){
 			hot_data_allocation_size_in_byte = atoi(size);
 		});
 
-		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size;
+		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size_i;
 		coop::input::register_parametered_action("--cold-size", "set the default allocation size for cold data --cold-size <int>", [&cold_data_allocation_size_in_byte](const char *size){
 			cold_data_allocation_size_in_byte = atoi(size);
+		});
+
+		coop::input::register_parametered_action("--depth-factor", "decides depth dependent weighting of members --depth-factor 2.0", [](const char *factor){
+			field_weight_depth_factor = atof(factor);
 		});
 
 		const char * user_include_path_root = nullptr;
@@ -265,7 +276,7 @@ int main(int argc, const char **argv) {
 			several cases need to be considered:
 				-> one hot field not linked to any other fields -> 'special snowflake'
 					-> should EVERYTHING else be externalized to the cold struct?
-				-> several hot, logically linked field tuples -> this actually shows a lack of coherency and could/should be communicated as a possible designflaw -> can/should I fix this?
+				-> several hot, logically linked field tuples -> this actually shows a lack of cohesion and could/should be communicated as a possible designflaw -> can/should I fix this?
 				-> cold data that has temporal linkage to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
 					'a' should probably just be handled locally (LHS - principle) but is this the purpose of this optimization?
 				-> everything is hot/cold -> basically nothing to hot/cold split -> AOSOA should be applied
@@ -738,7 +749,7 @@ void recursive_weighting(coop::record::record_info *rec_ref, const Stmt* loop_st
 		//update the current record's member usage statistic
 		for(unsigned i = 0; i < rec_ref->fields.size(); ++i){
 			//since this IS  a nested loop (child loop) we can apply some arbitrary factor to the members'weights
-			rec_ref->loop_mem.at(i, loop_idx) *= 10;
+			rec_ref->loop_mem.at(i, loop_idx) *= field_weight_depth_factor;
 		}
 		//since this loop_stmt could also parent other loops -> go recursive
 		auto loop_stmt_iter = coop::NestedLoopCallback::parent_child_map.find(loop_stmt);
