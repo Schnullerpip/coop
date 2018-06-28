@@ -1,9 +1,6 @@
 #ifndef COOP_FREE_LIST_HPP
 #define COOP_FREE_LIST_HPP
 
-#include<new>
-#include<stddef.h>
-
 template<typename T, typename P>
 constexpr size_t max(){
 	return sizeof(T) > sizeof(P) ? sizeof(T) : sizeof(P);
@@ -22,7 +19,7 @@ class FREE_LIST_NAME
 		T * as_data_ptr;
 	} c_d;
 
-	char byte_data[size * max<T, void*>()];
+	char byte_data[size * max<T, T*>()];
 
     T * free_ptr = nullptr;
 public:
