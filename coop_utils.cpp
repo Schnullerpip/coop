@@ -11,7 +11,7 @@ int coop::get_sizeof_in_byte(const FieldDecl* field){
 
 void coop::record::record_info::init(
     const clang::RecordDecl* class_struct,
-    std::vector<const clang::FieldDecl*> *field_vector,
+    std::set<const clang::FieldDecl*> *field_vector,
     std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
     std::map<const Stmt*, loop_credentials> *rlvnt_loops)
     {

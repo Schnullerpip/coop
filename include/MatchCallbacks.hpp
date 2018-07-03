@@ -28,7 +28,7 @@ namespace coop {
     //matchcallback that registeres members of classes for later usage
     class MemberRegistrationCallback : public coop::CoopMatchCallback {
     public:
-        std::map<const RecordDecl*, std::vector<const FieldDecl*>> class_fields_map;
+        std::map<const RecordDecl*, std::set<const FieldDecl*>> class_fields_map;
         std::map<const RecordDecl*, std::string> class_file_map;
 
         MemberRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}

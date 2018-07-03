@@ -1,5 +1,7 @@
-#include "MatchCallbacks.hpp"
-#include "SourceModification.h"
+#include"MatchCallbacks.hpp"
+#include"SourceModification.h"
+#include"data.hpp"
+#include"naming.hpp"
 
 //static variables
 std::map<const clang::Stmt*, coop::loop_credentials>
@@ -51,21 +53,13 @@ std::string coop::match::get_file_regex_match_condition(const char * path_additi
 
 
 //method implementations
-const char * coop::CoopMatchCallback::get_relevant_token(const char *file){
-    const char *relevant_token;
-    size_t iterations = 0;
-    for(relevant_token = file+strlen(file); *(relevant_token-1) != '/' && *(relevant_token-1) != '\\' && iterations < strlen(file); --relevant_token){
-        ++iterations;
-    }
-    return relevant_token;
-}
 
 void coop::CoopMatchCallback::get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
-    const char *fileName = get_relevant_token(srcMgr->getFilename(loop->getForLoc()).str().c_str());
+    const char *fileName = coop::naming::get_relevant_token(srcMgr->getFilename(loop->getForLoc()).str().c_str());
     *dest << "[F:" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
 }
 void coop::CoopMatchCallback::get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream *dest){
-    const char *fileName = get_relevant_token(srcMgr->getFilename(loop->getWhileLoc()).str().c_str());
+    const char *fileName = coop::naming::get_relevant_token(srcMgr->getFilename(loop->getWhileLoc()).str().c_str());
     *dest << "[W:" << fileName << ":" << srcMgr->getPresumedLineNumber(loop->getLocStart()) << "]";
 }
 
@@ -83,32 +77,40 @@ void coop::MemberRegistrationCallback::printData(){
 }
 
 void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &result){
-    const RecordDecl* rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
+    auto global = coop::global<RecordDecl>::use(result.Nodes.getNodeAs<RecordDecl>(coop_class_s));
+    const RecordDecl *rd = global->ptr;
+    SourceManager *src_mgr = global->src_mgr;
 
-    std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str().c_str();
+    std::string fileName = src_mgr->getFilename(rd->getLocation()).str().c_str();
 
-    coop::logger::log_stream << "found " << rd->getNameAsString().c_str() << " in file: " << get_relevant_token(fileName.c_str());
+    coop::logger::log_stream << "found " << rd->getNameAsString().c_str() << " in file: " << coop::naming::get_relevant_token(fileName.c_str());
     coop::logger::out();
 
     class_file_map[rd] = fileName;
 
     if(!rd->field_empty()){
         for(auto f : rd->fields()){
-            coop::logger::log_stream << "found '" << f->getNameAsString().c_str()
+            coop::logger::log_stream << "found '" << f->getNameAsString()
                 << "'(" << coop::get_sizeof_in_bits(f) << " bit) in record '"
-                << rd->getNameAsString().c_str();
+                << rd->getNameAsString();
             coop::logger::out();
 
-
-            class_fields_map[rd].push_back(f);
+            class_fields_map[rd].insert(coop::global<FieldDecl>::use(f)->ptr);
         }
     }
 }
 
 /*FunctionRegistrationCallback*/
 void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &result){
-    const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
+    const FunctionDecl* func = coop::global<FunctionDecl>::use(result.Nodes.getNodeAs<FunctionDecl>(coop_function_s))->ptr;
     const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
+
+    static coop::unique mem_ids;
+    if(mem_ids.check(coop::naming::get_stmt_id<MemberExpr>(memExpr, result.SourceManager)))
+    {
+        //already registered this mem usage
+        return;
+    }
 
     coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
     coop::logger::out();

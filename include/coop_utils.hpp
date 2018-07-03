@@ -1,25 +1,25 @@
 #ifndef COOP_UTILS_HPP
 #define COOP_UTILS_HPP
 
-
 // Declares clang::SyntaxOnlyAction.
-#include "clang/Frontend/FrontendActions.h"
-#include "clang/Tooling/CommonOptionsParser.h"
-#include "clang/Tooling/Tooling.h"
+#include"clang/Frontend/FrontendActions.h"
+#include"clang/Tooling/CommonOptionsParser.h"
+#include"clang/Tooling/Tooling.h"
 // Declares llvm::cl::extrahelp.
-#include "llvm/Support/CommandLine.h"
-#include "clang/ASTMatchers/ASTMatchers.h"
-#include "clang/ASTMatchers/ASTMatchFinder.h"
-#include "clang/Frontend/CompilerInstance.h"
-#include "clang/AST/ASTContext.h"
-#include "clang/Rewrite/Core/Rewriter.h"
+#include"llvm/Support/CommandLine.h"
+#include"clang/ASTMatchers/ASTMatchers.h"
+#include"clang/ASTMatchers/ASTMatchFinder.h"
+#include"clang/Frontend/CompilerInstance.h"
+#include"clang/AST/ASTContext.h"
+#include"clang/Rewrite/Core/Rewriter.h"
 
-#include <ctime>
-#include <string>
-#include <stdlib.h>
-#include <sstream>
-#include <iostream>
-#include <functional>
+#include<set>
+#include<ctime>
+#include<string>
+#include<stdlib.h>
+#include<sstream>
+#include<iostream>
+#include<functional>
 
 #include "Logger.hpp"
 
@@ -111,7 +111,7 @@ namespace coop{
         struct record_info {
             void init(
                 const clang::RecordDecl* class_struct,
-                std::vector<const clang::FieldDecl*> *field_vector,
+                std::set<const clang::FieldDecl*> *field_vector,
                 std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
                 std::map<const Stmt*, loop_credentials> *rlvnt_loops);
 
@@ -125,7 +125,7 @@ namespace coop{
             const clang::RecordDecl
                 *record;
             //reference to all the member nodes that the referred record has
-            std::vector<const clang::FieldDecl*>
+            std::set<const clang::FieldDecl*>
                 fields;
 
             //reference to the function-member mapping

@@ -57,11 +57,11 @@ void create_member_matrices(
 	coop::NestedLoopCallback &nested_loop_callback
 );
 void fill_function_member_matrix(coop::record::record_info &rec_ref,
-		std::vector<const FieldDecl*> *fields,
+		std::set<const FieldDecl*> *fields,
 		coop::FunctionRegistrationCallback &member_usage_callback
 );
 void fill_loop_member_matrix(
-	std::vector<const FieldDecl*> *fields,
+	std::set<const FieldDecl*> *fields,
 	coop::record::record_info &rec_ref,
 	coop::LoopFunctionsCallback &loop_functions_callback
 );
@@ -168,11 +168,11 @@ int main(int argc, const char **argv) {
 
 		MatchFinder data_aggregation;
 		data_aggregation.addMatcher(classes, &member_registration_callback);
-		data_aggregation.addMatcher(members_used_in_functions, &member_usage_callback);
-		data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
-		data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
-		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
-		data_aggregation.addMatcher(nested_loops, &nested_loop_callback);
+		//data_aggregation.addMatcher(members_used_in_functions, &member_usage_callback);
+		//data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
+		//data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
+		//data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
+		//data_aggregation.addMatcher(nested_loops, &nested_loop_callback);
 
 		//generate the ASTs for each compilation unit
 		std::vector<std::unique_ptr<ASTUnit>> ASTs;
@@ -611,7 +611,7 @@ void create_member_matrices(
 
 //iterate over each function to fill the function-member matrix of a record_info
 void fill_function_member_matrix(coop::record::record_info &rec_ref,
-		std::vector<const FieldDecl*> *fields,
+		std::set<const FieldDecl*> *fields,
 		coop::FunctionRegistrationCallback &member_usage_callback)
 {
 	for(auto func_mems : member_usage_callback.relevant_functions){
@@ -638,7 +638,7 @@ void fill_function_member_matrix(coop::record::record_info &rec_ref,
 }
 
 void fill_loop_member_matrix(
-	std::vector<const FieldDecl*> *fields,
+	std::set<const FieldDecl*> *fields,
 	coop::record::record_info &rec_ref,
 	coop::LoopFunctionsCallback &loop_functions_callback )
 {
