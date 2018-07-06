@@ -7,6 +7,7 @@
 #include <string>
 
 namespace coop{
+    enum Should_Exit {YES, NO};
     namespace logger {
         namespace {
             extern char const *out_prefix;
@@ -26,10 +27,13 @@ namespace coop{
         /*outs message to out_stream*/
         size_t& out(std::stringstream& msg_stream, const char* append = "\n");
 
+        /*outs log_stream to out_stream*/
         size_t& out();
 
+        void err(Should_Exit);
 
-        /*outs message to out_stream informing the user of a progress*/
+
+        /*informing the user of a progress*/
         enum Progress_Status {RUNNING, DONE, TODO};
 
         size_t& out(const char* msg, Progress_Status status);

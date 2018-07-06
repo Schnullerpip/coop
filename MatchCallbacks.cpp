@@ -4,6 +4,9 @@
 #include"naming.hpp"
 
 //static variables
+std::set<std::pair<const FunctionDecl*, std::string>>
+    coop::FunctionPrototypeRegistrationCallback::function_prototypes = {};
+
 std::map<const clang::Stmt*, coop::loop_credentials>
     coop::LoopMemberUsageCallback::loops = {};
 
@@ -77,13 +80,20 @@ void coop::MemberRegistrationCallback::printData(){
 }
 
 void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &result){
-    auto global = coop::global<RecordDecl>::use(result.Nodes.getNodeAs<RecordDecl>(coop_class_s));
-    const RecordDecl *rd = global->ptr;
-    SourceManager *src_mgr = global->src_mgr;
+    const RecordDecl *rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
+    std::string rd_id = coop::naming::get_decl_id<RecordDecl>(rd);
+    const ptr_ID<RecordDecl> * global = coop::global<RecordDecl>::get_global(rd_id);
 
-    std::string fileName = src_mgr->getFilename(rd->getLocation()).str().c_str();
+    if(global){
+        //we already found this record declaration - do nothing
+        return;
+    }else{
+        coop::global<RecordDecl>::set_global(rd, rd_id);
+    }
 
-    coop::logger::log_stream << "found " << rd->getNameAsString().c_str() << " in file: " << coop::naming::get_relevant_token(fileName.c_str());
+    std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str().c_str();
+
+    coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
     coop::logger::out();
 
     class_file_map[rd] = fileName;
@@ -100,19 +110,68 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
     }
 }
 
-/*FunctionRegistrationCallback*/
-void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &result){
-    const FunctionDecl* func = coop::global<FunctionDecl>::use(result.Nodes.getNodeAs<FunctionDecl>(coop_function_s))->ptr;
-    const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
+/*FunctionPrototypeRegistrationCallback*/
+void coop::FunctionPrototypeRegistrationCallback::run(const MatchFinder::MatchResult &result){
+    const FunctionDecl *proto = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
+    const FunctionDecl *func = proto->getDefinition();
 
-    static coop::unique mem_ids;
-    if(mem_ids.check(coop::naming::get_stmt_id<MemberExpr>(memExpr, result.SourceManager)))
-    {
-        //already registered this mem usage
+    //make sure to match only those prototypes, that we can find a definition for
+    if(!func){return;}
+
+    coop::logger::log_stream << "found function prototype: " << proto->getNameAsString();
+    coop::logger::out();
+
+    static coop::unique ids;
+    std::string id = coop::naming::get_decl_id<FunctionDecl>(proto);
+    if(ids.check(id)){
+        //already registered this one - do nothing
         return;
     }
 
-    coop::logger::log_stream << "found function declaration '" << func->getNameAsString() << "' using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
+    //we store the prototypes id with the definitions pointer
+    //this way in other TUs that will only be able to find the prototype, they will be able
+    //to associate the definition
+    coop::logger::log_stream << "associating '" << coop::naming::get_decl_id<FunctionDecl>(proto) << "' with: '" << func << "' instead of '" << proto << "'";
+    coop::logger::out();
+
+    //make sure to overwrite an existing global ptr_id for this prototype (could have been found and registered by other callbacks before)
+    auto global_f = coop::global<FunctionDecl>::get_global(id);
+    if(global_f){
+        //overwrite the pointer it associates to the pointer that holds the functions definition
+        global_f->ptr = func;
+        global_f->src_mgr = result.SourceManager;
+    }else{
+        //there is no global registration for this ptr_id - create one
+        coop::global<FunctionDecl>::set_global(func, id, result.SourceManager);
+    }
+}
+
+/*FunctionRegistrationCallback*/
+void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &result){
+    const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
+    if(!func->isThisDeclarationADefinition()){
+        //this is probably just a function header - dont mind it, since this is nothing we want to change
+        coop::logger::log_stream << "ignored function header: " << coop::naming::get_decl_id<FunctionDecl>(func);
+        coop::logger::out();
+        return;
+    }
+    auto global_func = coop::global<FunctionDecl>::use(func);
+    func = global_func->ptr;
+
+    const MemberExpr* memExpr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
+
+    //prevent redundant registration and guarantee unique access points (nodes)
+    std::string id = coop::naming::get_stmt_id<MemberExpr>(memExpr, result.SourceManager);
+    auto global_memExpr = coop::global<MemberExpr>::get_global(id);
+    if(global_memExpr){
+        //already registered this member Expression - do nothing
+        return;
+    }
+    else {
+        coop::global<MemberExpr>::set_global(memExpr, id, result.SourceManager);
+    }
+
+    coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << " " << func->getNameAsString() << "' " << global_func->id << "using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
     coop::logger::out();
 
     //cache the function node for later traversal
@@ -140,33 +199,34 @@ void coop::LoopFunctionsCallback::printData(){
 }
 
 void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
-    SourceManager &srcMgr = result.Context->getSourceManager();
-    std::stringstream ss;
 
-    const FunctionDecl *function_call = result.Nodes.getNodeAs<CallExpr>(coop_function_call_s)->getDirectCallee();
-    if(!function_call){
-        return;
-    }
+    auto global_func = coop::global<FunctionDecl>::use(result.Nodes.getNodeAs<CallExpr>(coop_function_call_s)->getDirectCallee());
+    const FunctionDecl *function_call = global_func->ptr;
 
     coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called in a " ;
 
     const Stmt *loop;
     bool isForLoop = true;
+    std::string loop_name;
     if(const ForStmt* for_loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
         loop = for_loop;
-        get_for_loop_identifier(for_loop, &srcMgr, &ss);
+        loop_name = coop::naming::get_for_loop_identifier(for_loop, result.SourceManager);
         coop::logger::log_stream << "for";
     }else if(const WhileStmt* while_loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
         loop = while_loop;
-        get_while_loop_identifier(while_loop, &srcMgr, &ss);
+        loop_name = coop::naming::get_while_loop_identifier(while_loop, result.SourceManager);
         isForLoop = false;
         coop::logger::log_stream << "while";
     }
 
-    coop::logger::log_stream << "Loop " << ss.str();
+    coop::logger::log_stream << "Loop " << loop_name;
     coop::logger::out();
+
+    //make sure we're handling the global versions
+    loop = coop::global<Stmt>::use(loop, loop_name, result.SourceManager)->ptr;
+    function_call = coop::global<FunctionDecl>::use(function_call)->ptr;
     
-    loop_function_calls[loop].identifier = ss.str();
+    loop_function_calls[loop].identifier = loop_name;
     loop_function_calls[loop].isForLoop = isForLoop;
     loop_function_calls[loop].funcs.push_back(function_call);
 
@@ -191,25 +251,37 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
 
     const MemberExpr *member = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
     Stmt const *loop_stmt;
-    std::stringstream ss;
     bool isForLoop = true;
 
+    //prevent redundant memberUsage registration (due to ultiple includes of the same h/hpp file)
+    static coop::unique member_ids;
+    if(member_ids.check(coop::naming::get_stmt_id<MemberExpr>(member, result.SourceManager))){
+        //already registered this member usage - do nothing
+        return;
+    }
+
+    std::string loop_name, member_id = coop::naming::get_stmt_id<MemberExpr>(member, result.SourceManager);
     if(const ForStmt* loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
         loop_stmt = loop;
-        get_for_loop_identifier(loop, &srcMgr, &ss);
-        coop::logger::log_stream << "found 'for loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+        loop_name = coop::naming::get_for_loop_identifier(loop, &srcMgr);
+        coop::logger::log_stream << "found 'for loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
         coop::logger::out();
     }else if(const WhileStmt* loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
         loop_stmt = loop;
         isForLoop = false;
-        get_while_loop_identifier(loop, &srcMgr, &ss);
-        coop::logger::log_stream << "found 'while loop' " << ss.str() << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+        loop_name = coop::naming::get_while_loop_identifier(loop, &srcMgr);
+        coop::logger::log_stream << "found 'while loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
         coop::logger::out();
     }
+
+    //make sure to only use the global versions / the unique access points to the nodes
+    loop_stmt = coop::global<Stmt>::use(loop_stmt, loop_name, result.SourceManager)->ptr;
+    member = coop::global<MemberExpr>::use(member, member_id, result.SourceManager)->ptr;
+
     auto loop_info = &loops[loop_stmt];
-    loop_info->identifier = ss.str();
+    loop_info->identifier = loop_name;
     loop_info->isForLoop = isForLoop;
     loop_info->member_usages.push_back(member);
     coop::LoopMemberUsageCallback::register_loop(loop_stmt);
@@ -260,33 +332,43 @@ void coop::NestedLoopCallback::print_data(){
 
 void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
     SourceManager &srcMgr = result.Context->getSourceManager();
-    std::stringstream ss;
     Stmt const * parent_loop, *child_loop;
+    std::string parent_name, child_name;
 
     //find child loop
     if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)){
         child_loop = for_loop_child;
-        get_for_loop_identifier(for_loop_child, &srcMgr, &ss);
-        coop::logger::log_stream << "found CHILD 'for loop' " << ss.str();
+        child_name = coop::naming::get_for_loop_identifier(for_loop_child, &srcMgr);
+        coop::logger::log_stream << "found CHILD 'for loop' " << child_name;
     }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_child_while_loop_s)){
         child_loop = while_loop_child;
-        get_while_loop_identifier(while_loop_child, &srcMgr, &ss);
-        coop::logger::log_stream << "found CHILD 'while loop' " << ss.str();
+        child_name = coop::naming::get_while_loop_identifier(while_loop_child, &srcMgr);
+        coop::logger::log_stream << "found CHILD 'while loop' " << child_name;
     }
+
+    if(coop::global<Stmt>::get_global(child_name)){
+        //we already registered this child loop - do nothing
+        coop::logger::clear();
+        return;
+    }
+
     coop::logger::log_stream << " parented by -> ";
 
     //match parent loop
-    ss.str("");
     if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
         parent_loop = for_loop_parent;
-        get_for_loop_identifier(for_loop_parent, &srcMgr, &ss);
-        coop::logger::log_stream << "'for loop' " << ss.str();
+        parent_name = coop::naming::get_for_loop_identifier(for_loop_parent, &srcMgr);
+        coop::logger::log_stream << "'for loop' " << parent_name;
     }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
         parent_loop = while_loop_parent;
-        get_while_loop_identifier(while_loop_parent, &srcMgr, &ss);
-        coop::logger::log_stream << "'while loop' " << ss.str();
+        parent_name = coop::naming::get_while_loop_identifier(while_loop_parent, &srcMgr);
+        coop::logger::log_stream << "'while loop' " << parent_name;
     }
     coop::logger::out();
+
+    //make sure to only use the global versions / unique access points to the nodes
+    parent_loop = coop::global<Stmt>::use(parent_loop, parent_name, result.SourceManager)->ptr;
+    child_loop = coop::global<Stmt>::use(child_loop, child_name, result.SourceManager)->ptr;
 
     NestedLoopCallback::parent_child_map[parent_loop].push_back(child_loop);
 }
@@ -295,13 +377,23 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
 {
     const MemberExpr *mem_expr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
     if(mem_expr){
-        if(FieldDecl const *field_decl = (const FieldDecl*) mem_expr->getMemberDecl()){
+        //make sure to search for the global version of this field
+        if(auto global_field = coop::global<FieldDecl>::get_global(static_cast<const FieldDecl*>(mem_expr->getMemberDecl()))){
+            const FieldDecl *field_decl = global_field->ptr;
             //check if the found member_expr matches a cold field
             auto iter = std::find(fields_to_find->begin(), fields_to_find->end(), field_decl);
             if(iter != fields_to_find->end()){
                 //we have found an occurence of a cold field! map it
-                memExpr_ASTcon e_a{mem_expr, ast_context_ptr};
-                coop::ColdFieldCallback::cold_field_occurances[field_decl].push_back(e_a);
+                //prevent redundant registration due to multiple includes of the same h/hpp file and make sure to only use the global version of this
+                std::string mem_expr_id = coop::naming::get_stmt_id<MemberExpr>(mem_expr, result.SourceManager);
+                auto global_mem_expr = coop::global<MemberExpr>::get_global(mem_expr_id);
+                if(global_mem_expr){
+                    //already registered this member usage - do nothing
+                    return;
+                }
+                coop::ColdFieldCallback::cold_field_occurances[field_decl].push_back({
+                    coop::global<MemberExpr>::use(mem_expr, mem_expr_id, result.SourceManager)->ptr, //registers the mem_expr
+                    ast_context_ptr});
             }
         }
     }

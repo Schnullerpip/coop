@@ -1,14 +1,15 @@
 //clang sources
-#include "clang/AST/DeclCXX.h"
-#include "clang/Rewrite/Core/Rewriter.h"
+#include"clang/AST/DeclCXX.h"
+#include"clang/Rewrite/Core/Rewriter.h"
 //std libraries
-#include <stdlib.h>
+#include<stdlib.h>
 //custom includes
-#include "coop_utils.hpp"
-#include "SystemStateInformation.hpp"
-#include "MatchCallbacks.hpp"
-#include "SourceModification.h"
-#include "InputArgs.h"
+#include"coop_utils.hpp"
+#include"SystemStateInformation.hpp"
+#include"MatchCallbacks.hpp"
+#include"SourceModification.h"
+#include"InputArgs.h"
+#include"data.hpp"
 
 using namespace clang::tooling;
 using namespace llvm;
@@ -36,7 +37,12 @@ static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 // -------------- GENERAL STUFF ----------------------------------------------------------
 
 
-//function heads
+//function prototypes
+void associate_functionCall_ids_with_prototype_ids(
+	coop::FunctionPrototypeRegistrationCallback *fprc,
+	coop::LoopFunctionsCallback *lfc
+);
+
 void recursive_weighting(
 	coop::record::record_info *rec_info,
 	const Stmt* child_loop);
@@ -133,7 +139,8 @@ int main(int argc, const char **argv) {
 
         DeclarationMatcher classes = cxxRecordDecl(file_match, hasDefinition(), unless(isUnion())).bind(coop_class_s);
 		DeclarationMatcher members = fieldDecl(file_match, hasAncestor(cxxRecordDecl(hasDefinition(), anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
-		StatementMatcher members_used_in_functions = memberExpr(file_match, hasAncestor(functionDecl().bind(coop_function_s))).bind(coop_member_s);
+		DeclarationMatcher function_prototypes = functionDecl(file_match, unless(isDefinition())).bind(coop_function_s);
+		StatementMatcher members_used_in_functions = memberExpr(file_match, hasAncestor(functionDecl(isDefinition()).bind(coop_function_s))).bind(coop_member_s);
 
         StatementMatcher loops = anyOf(forStmt(file_match).bind(coop_loop_s), whileStmt(file_match).bind(coop_loop_s));
         StatementMatcher loops_distinct = anyOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
@@ -160,6 +167,7 @@ int main(int argc, const char **argv) {
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 
 		coop::MemberRegistrationCallback member_registration_callback(&user_files);
+		coop::FunctionPrototypeRegistrationCallback prototype_registration_callback;
 		coop::FunctionRegistrationCallback member_usage_callback(&user_files);
 		coop::LoopFunctionsCallback loop_functions_callback(&user_files);
 		coop::LoopMemberUsageCallback for_loop_member_usages_callback(&user_files);
@@ -168,11 +176,12 @@ int main(int argc, const char **argv) {
 
 		MatchFinder data_aggregation;
 		data_aggregation.addMatcher(classes, &member_registration_callback);
-		//data_aggregation.addMatcher(members_used_in_functions, &member_usage_callback);
-		//data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
-		//data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
-		//data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
-		//data_aggregation.addMatcher(nested_loops, &nested_loop_callback);
+		data_aggregation.addMatcher(function_prototypes, &prototype_registration_callback);
+		data_aggregation.addMatcher(members_used_in_functions, &member_usage_callback);
+		data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
+		data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
+		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
+		data_aggregation.addMatcher(nested_loops, &nested_loop_callback);
 
 		//generate the ASTs for each compilation unit
 		std::vector<std::unique_ptr<ASTUnit>> ASTs;
@@ -206,6 +215,11 @@ int main(int argc, const char **argv) {
 			new coop::record::record_info[num_records]();
 
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
+
+		//associate_functionCall_ids_with_prototype_ids(
+		//	&prototype_registration_callback,
+		//	&loop_functions_callback
+		//);
 
 		//the loop_registration_callback contains all the loops that directly associate members
 		//loop_functions_callback contains all the loops, that call functions and therefore might indirectly associate members
@@ -483,22 +497,50 @@ int main(int argc, const char **argv) {
 	return 0;
 }
 
+void associate_functionCall_ids_with_prototype_ids(
+	coop::FunctionPrototypeRegistrationCallback *fprc,
+	coop::LoopFunctionsCallback *lfc)
+{
+	//iterate over each registered Function that is interesting to us (called inside a loop)
+	for(auto &l_credentials : lfc->loop_function_calls){
+		for(auto &func : l_credentials.second.funcs){
+			//search for a prototype matching g
+			for(auto &p : fprc->function_prototypes){
+				if(p.first->getNameAsString() == func->getNameAsString()){//TODO need better solution than this -> this practically disallows same name functions in different namespaces
+					coop::global<FunctionDecl>::get_global_by_ptr(func)->id = p.second;
+					coop::global<FunctionDecl>::get_global_by_ptr(func)->id = p.second;
+				}
+			}
+		}
+	}
+}
+
+
 void register_indirect_memberusage_in_loop_functioncalls(
 	coop::LoopFunctionsCallback &loop_functions_callback,
 	coop::FunctionRegistrationCallback &member_usage_callback)
 {
 	std::map<const Stmt*, coop::loop_credentials> purified_map; 
+	coop::logger::log_stream << "[Loop_Functions]::size -> " << loop_functions_callback.loop_function_calls.size();
+	coop::logger::out();
 	//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
 	//get rid of those entries 
-	for(auto fc : loop_functions_callback.loop_function_calls){
+	for(auto &fc : loop_functions_callback.loop_function_calls){
 		bool remove = true;
+		coop::logger::log_stream << fc.second.identifier << ":";
+		coop::logger::out();
 		//for each function in that loop, check wether it is a relevant function
 		for(auto f : fc.second.funcs){
-			auto iter = member_usage_callback.relevant_functions.find(f);
+			auto iter = member_usage_callback.relevant_functions.find(coop::global<FunctionDecl>::get_global(f)->ptr);
 			if(iter != member_usage_callback.relevant_functions.end()){
 				//this function is relevant to us and therefore validates the loop to be relevant
+				coop::logger::log_stream << " yes";
+				coop::logger::out();
 				remove = false;
 				break;
+			}else{
+				coop::logger::log_stream << " no";
+				coop::logger::out();
 			}
 		}
 		if(!remove){
@@ -625,7 +667,14 @@ void fill_function_member_matrix(coop::record::record_info &rec_ref,
 			coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
 				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
-			const FieldDecl* child = static_cast<const FieldDecl*>(mem->getMemberDecl());
+			const FieldDecl *child = static_cast<const FieldDecl*>(mem->getMemberDecl());
+			auto global_child = coop::global<FieldDecl>::get_global(child);
+			if(!global_child){
+				coop::logger::log_stream << "[ERROR] - there is no global: " << coop::naming::get_decl_id<FieldDecl>(child);
+				coop::logger::err(coop::Should_Exit::YES);
+			}
+			child = global_child->ptr;
+
 			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
 				coop::logger::log_stream << "' - yes";
 				rec_ref.fun_mem.at(rec_ref.field_idx_mapping[child], func_idx)++;

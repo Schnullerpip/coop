@@ -1,7 +1,8 @@
 #ifndef COOP_MATCHCALLBACKS_HPP
 #define COOP_MATCHCALLBACKS_HPP
 
-#include "coop_utils.hpp"
+#include"coop_utils.hpp"
+#include<set>
 
 namespace coop {
 
@@ -37,6 +38,19 @@ namespace coop {
 
     private:
         virtual void run(const MatchFinder::MatchResult &result);
+    };
+
+
+    /*  
+        will cache all the pure function prototypes so later other functionDecls can be attributed to this prototype
+        this is very important, so that functioncalls made in other translationunits (which can only refer to the prototype defined in some h/hpp file)
+        will be able to associate the actualfunction definition (defined in some completely unrelated c/cpp file)
+    */
+    class FunctionPrototypeRegistrationCallback : public MatchFinder::MatchCallback {
+    public:
+        static std::set<std::pair<const FunctionDecl*, std::string>> function_prototypes;
+    private:
+        virtual void run(const MatchFinder::MatchResult &result) override;
     };
 
     /*

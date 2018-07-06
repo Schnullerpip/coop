@@ -32,9 +32,7 @@ void coop::record::record_info::init(
     field_weights.resize(fields.size());
     for(auto f : fields){
         field_idx_mapping[f] = index_count;
-
-        std::pair<const FieldDecl*, float> f_w {f, 0};
-        field_weights[index_count++] = f_w;
+        field_weights[index_count++] = {f, 0};
     }
 }
 

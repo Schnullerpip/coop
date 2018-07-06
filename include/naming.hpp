@@ -23,7 +23,7 @@ namespace naming {
         std::string file_name = get_relevant_token(src_mgr.getFilename(d->getLocation()).str().c_str());
 
         std::stringstream dest;
-        dest << "[rec:" << file_name << ":"
+        dest << "[decl:" << file_name << ":"
             << src_mgr.getPresumedLineNumber(d->getLocStart()) << ":"
             << src_mgr.getPresumedColumnNumber(d->getLocStart()) << "]";
         return dest.str();
@@ -40,6 +40,10 @@ namespace naming {
         return dest.str();
 
     }
+
+    std::string get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr);
+    std::string get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr);
+
 }//namespace naming
 }//namespace coop
 

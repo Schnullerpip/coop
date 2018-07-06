@@ -49,6 +49,16 @@ namespace coop{
             return out(log_stream);
         }
 
+        void err(Should_Exit se){
+            std::stringstream local;
+            local << "[ERROR]::" << log_stream.str();
+            clear();
+            out(local.str().c_str());
+            if(se == Should_Exit::YES){
+                exit(1);
+            }
+        }
+
         size_t& out(const char* msg, Progress_Status status){
             return out(msg, status == RUNNING ? " [RUNNING]\n" : status == DONE ? " [DONE]\n" : " [TODO!!!!!!!]\n");
         }
