@@ -22,7 +22,7 @@ class coop_free_list
 		T * as_data_ptr;
 	} c_d;
 
-	char byte_data[size * max<T, void*>()];
+	char byte_data[size * max<T, T*>()];
 
     T * free_ptr = nullptr;
 public:
