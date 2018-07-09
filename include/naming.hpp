@@ -16,6 +16,7 @@ namespace coop{
 namespace naming {
     const char * get_from_end_until(const char *file, const char delimiter);
     const char * get_relevant_token(const char *file);
+    std::string get_without(std::string, const char * without);
 
     template<typename T>
     std::string get_decl_id(const T *d){

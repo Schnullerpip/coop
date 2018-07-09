@@ -391,8 +391,13 @@ int main(int argc, const char **argv) {
 					//local POD carrying context information from function to function
 					coop::src_mod::cold_pod_representation cpr;
 
+
+					cpr.rec_info = &rec;
 					cpr.file_name = member_registration_callback.class_file_map[rec.record];
+					cpr.record_name = rec.record->getNameAsString();
 					cpr.user_include_path = user_include_path_root;
+					cpr.qualified_record_name = rec.record->getQualifiedNameAsString();
+					cpr.qualifier = coop::naming::get_without(cpr.qualified_record_name, cpr.record_name.c_str());
 
 					//create a struct that holds all the field-declarations for the cold fields
 					coop::src_mod::create_cold_struct_for(

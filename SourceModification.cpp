@@ -148,9 +148,6 @@ namespace coop{
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
 
-            cpr->rec_info = ri;
-            cpr->record_name = ri->record->getNameAsString().c_str();
-
             //our modification will differ depending on wether the record is defined in a h/hpp or c/cpp file
             //so first determine what it is
             const char *ending = coop::naming::get_from_end_until(cpr->file_name.c_str(), '.');
@@ -374,7 +371,7 @@ namespace coop{
         {
             std::string new_replacement = get_text(expr_ctxt.first, expr_ctxt.second);
             std::stringstream ss;
-            ss << "new(" << cpr->free_list_instance_name_hot << ".get())";
+            ss << "new(" << cpr-> qualifier << cpr->free_list_instance_name_hot << ".get())";
             replaceAll(new_replacement, "new", ss.str());
 
             get_rewriter(expr_ctxt.second)->
@@ -396,6 +393,7 @@ namespace coop{
             //after the actual destruction of the instance we need to inform the freelist
             std::stringstream deletion_addition;
             deletion_addition << "\n//marks the cold_data_freelist's cold_struct instance as reusable\n"
+                << cpr->qualifier
                 << cpr->free_list_instance_name_hot
                 << ".free(" << instance_name << ")";
 
@@ -418,12 +416,19 @@ namespace coop{
             }else{
                 replaceAll(file_content, FREE_LIST_NAME, cpr->free_list_name);
             }
-            replaceAll(file_content, RECORD_NAME, cpr->record_name);
-            replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
-            replaceAll(file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
-            replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-
+            replaceAll(file_content, RECORD_NAME, cpr->qualified_record_name);
             std::stringstream ss;
+            ss << cpr->qualifier << cpr->struct_name;
+
+            replaceAll(file_content, STRUCT_NAME, ss.str().c_str());
+            ss.str("");
+            ss << cpr->qualifier << cpr->free_list_instance_name_hot;
+            replaceAll(file_content, FREE_LIST_INSTANCE_HOT, ss.str().c_str());
+            ss.str("");
+            ss << cpr->qualifier << cpr->free_list_instance_name_cold;
+            replaceAll(file_content, FREE_LIST_INSTANCE_COLD, ss.str().c_str());
+
+            ss.str("");
             ss << allocation_size_hot_data;
             replaceAll(file_content, SIZE_HOT, ss.str().c_str());
             ss.str("");

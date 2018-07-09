@@ -1,4 +1,5 @@
 #include"naming.hpp"
+#include"Logger.hpp"
 
 namespace coop {
 namespace naming{
@@ -16,6 +17,12 @@ namespace naming{
     const char * get_relevant_token(const char *file)
     {
         return get_from_end_until(file, '/');
+    }
+
+    std::string get_without(std::string s, const char * without)
+    {
+        s.replace(s.find(without), strlen(without), "");
+        return s;
     }
 
     std::string get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr)

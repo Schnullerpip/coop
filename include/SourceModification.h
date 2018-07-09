@@ -28,6 +28,8 @@ namespace coop {
             //name of the created struct
             std::string struct_name;
             std::string record_name;
+            std::string qualified_record_name;
+            std::string qualifier;
 
             //name of the address for the allocated space of the created struct
             std::string cold_data_container_name;
