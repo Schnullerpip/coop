@@ -1,10 +1,12 @@
-#include "SourceModification.h"
-#include "clang/AST/DeclCXX.h"
-#include "coop_utils.hpp"
-#include <fstream>
+#include"SourceModification.h"
+#include"clang/AST/DeclCXX.h"
+#include"coop_utils.hpp"
+#include"data.hpp"
+#include<fstream>
 
 #define STRUCT_NAME "STRUCT_NAME"
 #define UNION_NAME "UNION_NAME"
+#define EXTERN "EXTERN"
 #define STRUCT_FIELDS "STRUCT_FIELDS"
 #define DATA_NAME "DATA_NAME"
 #define SIZE_COLD "SIZE_COLD"
@@ -49,6 +51,61 @@ namespace {
 namespace coop{
     namespace src_mod{
 
+        namespace {
+            std::map<ASTContext *, Rewriter> ast_rewriter_map = {};
+
+            Rewriter * get_rewriter(ASTContext *ast_context){
+                auto iter = ast_rewriter_map.find(ast_context);
+                if(iter != ast_rewriter_map.end()){
+                    return &iter->second;
+                }
+                Rewriter &rewriter = ast_rewriter_map[ast_context];
+                rewriter.setSourceMgr(ast_context->getSourceManager(), ast_context->getLangOpts());
+                return &rewriter;
+            }
+            Rewriter * get_rewriter(ASTContext &ast_context){
+                return get_rewriter(&ast_context);
+            }
+        }
+
+        void apply_changes(){
+            for(auto &ast_rewriter : ast_rewriter_map){
+                coop::logger::out("DOING ANOTHER SOURCE MODIFICATION");
+                auto &rewriter = ast_rewriter.second;
+                rewriter.overwriteChangedFiles();
+            }
+        }
+
+        void include_file(const char *target_file, const char *include)
+        {
+            std::stringstream ss;
+            std::ifstream ifs(target_file);
+            std::string tmpl_file_content(
+                (std::istreambuf_iterator<char>(ifs)),
+                (std::istreambuf_iterator<char>()));
+
+            //TODO if the file already includes the 'include' dont do it
+            //if(tmpl_file_content.find(coop::naming::get_relevant_token(include)) != std::string::npos){
+            //    return;
+            //}
+
+
+            ss << "#include \"" << include << "\"\n" << tmpl_file_content;
+
+            std::ofstream ofs("coop_tmp");
+            if(ofs.is_open()){
+                ofs << ss.str();
+            }
+            ofs.close();
+
+            ss.str("");
+            ss << "cp coop_tmp " << target_file << " && rm coop_tmp";
+            if(system(ss.str().c_str()) != 0){
+                coop::logger::log_stream << "SourceModification.cpp -> call to system failed!";
+                coop::logger::err(coop::Should_Exit::YES);
+            }
+        }
+
         void include_free_list_hpp(const char *file_path, const char *include_path_to_add){
             std::stringstream ss;
             std::ifstream ifs(file_path);
@@ -70,7 +127,9 @@ namespace coop{
             }
         }
 
-        void remove_decl(const FieldDecl *fd, Rewriter *rewriter){
+        void remove_decl(const FieldDecl *fd){
+            Rewriter *rewriter = get_rewriter(fd->getASTContext());
+
             rewriter->setSourceMgr(fd->getASTContext().getSourceManager(), fd->getASTContext().getLangOpts());
             auto src_range = fd->getSourceRange();
             rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
@@ -81,8 +140,7 @@ namespace coop{
             cold_pod_representation *cpr,
             const char * user_include_path,
             size_t allocation_size_hot_data,
-            size_t allocation_size_cold_data,
-            Rewriter *rewriter)
+            size_t allocation_size_cold_data)
         {
             const RecordDecl* rd = ri->record;
             std::stringstream ss;
@@ -92,13 +150,19 @@ namespace coop{
                 (std::istreambuf_iterator<char>()));
 
             cpr->rec_info = ri;
+            cpr->record_name = ri->record->getNameAsString().c_str();
+
+            //our modification will differ depending on wether the record is defined in a h/hpp or c/cpp file
+            //so first determine what it is
+            const char *ending = coop::naming::get_from_end_until(cpr->file_name.c_str(), '.');
+            if((strcmp(ending, "hpp") != 0) && (strcmp(ending, "h") != 0)){
+                cpr->is_header_file = false;
+            }
 
             //determine the generated struct's name
             ss << coop_cold_struct_s << rd->getNameAsString();
             cpr->struct_name = ss.str();
             ss.str("");
-
-            cpr->record_name = cpr->rec_info->record->getNameAsString().c_str();
 
             //determine the name of the free list coming with the generated struct
             ss << coop_free_list_name << cpr->record_name;
@@ -148,6 +212,9 @@ namespace coop{
                 replaceAll(tmpl_file_content, FIELD_INITIALIZERS, initializer.str());
 
             }
+
+            replaceAll(tmpl_file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
+
             replaceAll(tmpl_file_content, STRUCT_NAME, cpr->struct_name);
             replaceAll(tmpl_file_content, STRUCT_FIELDS, ss.str());
             ss.str("");
@@ -172,15 +239,13 @@ namespace coop{
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
 
-            ASTContext &ast_context = rd->getASTContext();
-            rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
-            rewriter->InsertTextBefore(rd->getSourceRange().getBegin(), tmpl_file_content);
+            get_rewriter(rd->getASTContext())->
+                InsertTextBefore(rd->getSourceRange().getBegin(), tmpl_file_content);
         }
 
 
         void create_free_list_for(
-            cold_pod_representation *cpr,
-            Rewriter *rewriter)
+            cold_pod_representation *cpr)
         {
             std::stringstream ss;
             std::ifstream ifs("src_mod_templates/free_list_template.tmpl");
@@ -189,20 +254,13 @@ namespace coop{
                 (std::istreambuf_iterator<char>()));
 
             replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
-            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
 
-            ASTContext &ast_context = cpr->rec_info->record->getASTContext();
-            rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
-            rewriter->InsertTextBefore(cpr->rec_info->record->getSourceRange().getBegin(), tmpl_file_content);
+            get_rewriter(cpr->rec_info->record->getASTContext())->
+                InsertTextBefore(cpr->rec_info->record->getSourceRange().getBegin(), tmpl_file_content);
         }
 
-        void add_cpr_ref_to(
-            coop::src_mod::cold_pod_representation *cpr,
-            Rewriter *rewriter)
+        void add_cpr_ref_to( coop::src_mod::cold_pod_representation *cpr)
         {
-            ASTContext &ast_context = cpr->rec_info->record->getASTContext();
-            rewriter->setSourceMgr(ast_context.getSourceManager(), ast_context.getLangOpts());
-
             std::ifstream ifs("src_mod_templates/intrusive_record_addition.cpp");
             std::string file_content(
                 (std::istreambuf_iterator<char>(ifs)),
@@ -215,24 +273,24 @@ namespace coop{
 
             //this function will only be called if ri->cold_fields is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
-            rewriter->InsertTextBefore(cpr->rec_info->cold_fields[0]->getLocStart(), file_content);
+            get_rewriter(cpr->rec_info->record->getASTContext())->
+                InsertTextBefore(cpr->rec_info->cold_fields[0]->getLocStart(), file_content);
         }
 
         void add_memory_allocation_to(
             coop::src_mod::cold_pod_representation *cpr,
-            const char * user_include_path,
             size_t allocation_size_hot_data,
-            size_t allocation_size_cold_data,
-            Rewriter *rewriter)
+            size_t allocation_size_cold_data)
         {
             std::ifstream ifs("src_mod_templates/memory_allocation_template.cpp");
             std::string file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
 
+            replaceAll(file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
             replaceAll(file_content, DATA_NAME, cpr->cold_data_container_name);
             replaceAll(file_content, RECORD_NAME, cpr->record_name);
-            if(user_include_path){
+            if(cpr->user_include_path){
                 replaceAll(file_content, FREE_LIST_NAME, free_list_name_default);
             }else{
                 replaceAll(file_content, FREE_LIST_NAME, cpr->free_list_name);
@@ -248,10 +306,14 @@ namespace coop{
             replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
             replaceAll(file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
 
-            rewriter->InsertTextAfterToken(cpr->rec_info->record->getSourceRange().getEnd(), file_content);
+            get_rewriter(cpr->rec_info->record->getASTContext())->
+                InsertTextAfterToken(cpr->rec_info->record->getSourceRange().getEnd(), file_content);
         }
 
-        void redirect_memExpr_to_cold_struct(const MemberExpr *mem_expr, cold_pod_representation *cpr, ASTContext *ast_context, Rewriter &rewriter)
+        void redirect_memExpr_to_cold_struct(
+            const MemberExpr *mem_expr,
+            cold_pod_representation *cpr,
+            ASTContext *ast_context)
         {
             std::string usage_text = get_text(mem_expr, ast_context);
 
@@ -260,16 +322,24 @@ namespace coop{
             std::stringstream ss;
             ss << coop_safe_struct_acces_method_name << "->" << field_decl_name;
 
+            coop::logger::log_stream << "changing: " << coop::naming::get_stmt_id<MemberExpr>(mem_expr, &ast_context->getSourceManager());
+            coop::logger::out();
+
             usage_text.replace(
                 usage_text.find(field_decl_name),
                 field_decl_name.length(),
                 ss.str());
-            
-            rewriter.ReplaceText(mem_expr->getSourceRange(), usage_text);
+
+            get_rewriter(ast_context)->
+                ReplaceText(mem_expr->getSourceRange(), usage_text);
         }
 
-        void handle_free_list_fragmentation(cold_pod_representation *cpr, Rewriter *rewriter){
+        void handle_free_list_fragmentation(
+            cold_pod_representation *cpr)
+        {
             const CXXDestructorDecl *dtor_decl = cpr->rec_info->destructor_ptr;
+
+            Rewriter *rewriter = get_rewriter(dtor_decl->getASTContext());
 
             //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
             std::stringstream free_stmt;
@@ -302,7 +372,9 @@ namespace coop{
             }
         }
 
-        void handle_new_instantiation(cold_pod_representation *cpr, std::pair<const CXXNewExpr*, ASTContext*> &expr_ctxt, Rewriter *rewriter)
+        void handle_new_instantiation(
+            cold_pod_representation *cpr,
+            std::pair<const CXXNewExpr*, ASTContext*> &expr_ctxt)
         {
             std::string new_replacement = get_text(expr_ctxt.first, expr_ctxt.second);
             coop::logger::log_stream << "FOUND heap instantiation -> " << new_replacement;
@@ -310,11 +382,16 @@ namespace coop{
             std::stringstream ss;
             ss << "new(" << cpr->free_list_instance_name_hot << ".get())";
             replaceAll(new_replacement, "new", ss.str());
-            rewriter->ReplaceText(expr_ctxt.first->getSourceRange(), new_replacement);
+
+            get_rewriter(expr_ctxt.second)->
+                ReplaceText(expr_ctxt.first->getSourceRange(), new_replacement);
         }
 
-        void handle_delete_calls(cold_pod_representation *cpr, std::pair<const CXXDeleteExpr*, ASTContext*> &del_ctxt, Rewriter *rewriter)
+        void handle_delete_calls(
+            cold_pod_representation *cpr,
+            std::pair<const CXXDeleteExpr*, ASTContext*> &del_ctxt)
         {
+            Rewriter *rewriter = get_rewriter(del_ctxt.second);
 
             std::string instance_name = get_text(del_ctxt.first->getArgument(), del_ctxt.second);
             
@@ -329,6 +406,38 @@ namespace coop{
                 << ".free(" << instance_name << ")";
 
             rewriter->InsertTextAfterToken(del_ctxt.first->getSourceRange().getEnd(), deletion_addition.str());
+        }
+
+        void define_free_list_instances(
+            cold_pod_representation *cpr,
+            const FunctionDecl *main_function_node,
+            size_t allocation_size_hot_data,
+            size_t allocation_size_cold_data)
+        {
+            std::ifstream ifs("src_mod_templates/free_list_definition.cpp");
+            std::string file_content(
+                (std::istreambuf_iterator<char>(ifs)),
+                (std::istreambuf_iterator<char>()));
+
+            if(cpr->user_include_path){
+                replaceAll(file_content, FREE_LIST_NAME, free_list_name_default);
+            }else{
+                replaceAll(file_content, FREE_LIST_NAME, cpr->free_list_name);
+            }
+            replaceAll(file_content, RECORD_NAME, cpr->record_name);
+            replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
+            replaceAll(file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
+            replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+
+            std::stringstream ss;
+            ss << allocation_size_hot_data;
+            replaceAll(file_content, SIZE_HOT, ss.str().c_str());
+            ss.str("");
+            ss << allocation_size_cold_data;
+            replaceAll(file_content, SIZE_COLD, ss.str().c_str());
+
+            get_rewriter(main_function_node->getASTContext())->
+                InsertTextBefore(main_function_node->getLocStart(), file_content);
         }
     }
 }

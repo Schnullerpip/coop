@@ -28,16 +28,17 @@ template<typename T>
 struct ptr_ID{
     const T *ptr = nullptr;
     std::string id = "";
-    SourceManager *src_mgr = nullptr;
+    ASTContext *ast_context = nullptr;
+
     inline bool operator==(const ptr_ID<T> &other){
         return other.ptr == ptr;
     }
     inline void take(const ptr_ID<T> &other){
         ptr = other.ptr;
         id = other.id;
-        src_mgr = other.src_mgr;
+        ast_context = other.ast_context;
     }
-    ptr_ID(const T *p, std::string p_id, SourceManager *sm):ptr(p),id(p_id),src_mgr(sm){}
+    ptr_ID(const T *p, std::string p_id, ASTContext *ast_ctxt):ptr(p),id(p_id),ast_context(ast_ctxt){}
 };
 
 template<typename T>
@@ -65,12 +66,12 @@ public:
     }
 
 
-    static ptr_ID<T> * set_global(const T *ptr, std::string id, SourceManager *sm){
-        ptr_id.push_back(ptr_ID<T>(ptr, id, sm));
+    static ptr_ID<T> * set_global(const T *ptr, std::string id, ASTContext *ast_context){
+        ptr_id.push_back(ptr_ID<T>(ptr, id, ast_context));
         return get_global(id);
     }
     static ptr_ID<T> * set_global(const T *ptr, std::string id){
-        return set_global(ptr, id, &ptr->getASTContext().getSourceManager());
+        return set_global(ptr, id, &ptr->getASTContext());
     }
     static ptr_ID<T> * set_global(const T *ptr){
         return set_global(ptr, coop::naming::get_decl_id<T>(ptr));
@@ -79,15 +80,15 @@ public:
 
     //use will look for a global version - return it if it exists and register it if not
     //so it will always return a pointer to an existing ptr_ID<T>
-    static ptr_ID<T> * use(const T *ptr, std::string id, SourceManager *src_mgr){
+    static ptr_ID<T> * use(const T *ptr, std::string id, ASTContext *ast_context){
         ptr_ID<T> *ret = get_global(id);
         if(!ret){
-            return set_global(ptr, id, src_mgr);
+            return set_global(ptr, id, ast_context);
         }
         return ret;
     }
     static ptr_ID<T> * use(const T *ptr, std::string id){
-        return use(ptr, id, &ptr->getASTContext().getSourceManager());
+        return use(ptr, id, &ptr->getASTContext());
     }
     static ptr_ID<T> * use(const T *ptr){
         return use(ptr, coop::naming::get_decl_id<T>(ptr));

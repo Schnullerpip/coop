@@ -15,7 +15,16 @@
 namespace coop {
     namespace src_mod {
 
+        void apply_changes();
+
         struct cold_pod_representation{
+            //the name of the file, the record is defined in
+            std::string file_name;
+            bool is_header_file = true;
+
+            //user include path
+            const char *user_include_path = nullptr;
+
             //name of the created struct
             std::string struct_name;
             std::string record_name;
@@ -35,59 +44,66 @@ namespace coop {
             coop::record::record_info *rec_info = nullptr;
         };
 
+        void include_file(
+            const char *target_file,
+            const char *include
+        );
+
         void include_free_list_hpp(
             const char * file_path,
-            const char *include_path_to_add);
+            const char *include_path_to_add
+        );
 
         void remove_decl(
-            const clang::FieldDecl *fd,
-            Rewriter *rewriter);
+            const clang::FieldDecl *fd
+        );
 
         void create_cold_struct_for(
             coop::record::record_info*,
             cold_pod_representation*,
             const char * user_include_path,
             size_t allocation_size_hot_data,
-            size_t allocation_size_cold_data,
-            Rewriter*);
+            size_t allocation_size_cold_data
+        );
         
         void create_free_list_for(
-            cold_pod_representation*,
-            Rewriter *
+            cold_pod_representation*
         );
 
         void add_cpr_ref_to(
-            coop::src_mod::cold_pod_representation*,
-            Rewriter*);
+            coop::src_mod::cold_pod_representation*
+        );
         
         void add_memory_allocation_to(
             coop::src_mod::cold_pod_representation *cpr,
-            const char * user_include_path,
             size_t allocation_size_hot_data,
-            size_t allocation_size_cold_data,
-            Rewriter *rewriter);
+            size_t allocation_size_cold_data
+        );
 
         void redirect_memExpr_to_cold_struct(
             const MemberExpr *mem_expr,
             cold_pod_representation *cpr,
-            ASTContext *ast_context,
-            Rewriter &rewriter);
+            ASTContext *ast_context
+        );
 
         void handle_free_list_fragmentation(
-            cold_pod_representation *cpr,
-            Rewriter *rewriter
+            cold_pod_representation *cpr
         );
 
         void handle_new_instantiation(
             cold_pod_representation *cpr,
-            std::pair<const CXXNewExpr *, ASTContext*> &expr_ctxt,
-            Rewriter *rewriter
+            std::pair<const CXXNewExpr *, ASTContext*> &expr_ctxt
         );
 
         void handle_delete_calls(
             cold_pod_representation *cpr,
-            std::pair<const CXXDeleteExpr*, ASTContext*> &del_ctxt,
-            Rewriter *rewriter
+            std::pair<const CXXDeleteExpr*, ASTContext*> &del_ctxt
+        );
+        void define_free_list_instances(
+            cold_pod_representation *cpr,
+            const FunctionDecl *main_function_node,
+            size_t allocation_size_hot_data,
+            size_t allocation_size_cold_data
         );
     }
 }

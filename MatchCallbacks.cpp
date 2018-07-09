@@ -34,6 +34,9 @@ std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*
 std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>>
     coop::FindDeleteCalls::delete_calls_map = {};
 
+std::string
+    coop::FindMainFunction::main_file = "";
+
 //function implementations
 std::stringstream file_regex;
 size_t file_inputs = 0;
@@ -93,6 +96,7 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
 
     std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str().c_str();
 
+    //coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
     coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
     coop::logger::out();
 
@@ -139,10 +143,10 @@ void coop::FunctionPrototypeRegistrationCallback::run(const MatchFinder::MatchRe
     if(global_f){
         //overwrite the pointer it associates to the pointer that holds the functions definition
         global_f->ptr = func;
-        global_f->src_mgr = result.SourceManager;
+        global_f->ast_context = result.Context;
     }else{
         //there is no global registration for this ptr_id - create one
-        coop::global<FunctionDecl>::set_global(func, id, result.SourceManager);
+        coop::global<FunctionDecl>::set_global(func, id, result.Context);
     }
 }
 
@@ -168,7 +172,7 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
         return;
     }
     else {
-        coop::global<MemberExpr>::set_global(memExpr, id, result.SourceManager);
+        coop::global<MemberExpr>::set_global(memExpr, id, result.Context);
     }
 
     coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << " " << func->getNameAsString() << "' " << global_func->id << "using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
@@ -223,7 +227,7 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     coop::logger::out();
 
     //make sure we're handling the global versions
-    loop = coop::global<Stmt>::use(loop, loop_name, result.SourceManager)->ptr;
+    loop = coop::global<Stmt>::use(loop, loop_name, result.Context)->ptr;
     function_call = coop::global<FunctionDecl>::use(function_call)->ptr;
     
     loop_function_calls[loop].identifier = loop_name;
@@ -277,8 +281,8 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
     }
 
     //make sure to only use the global versions / the unique access points to the nodes
-    loop_stmt = coop::global<Stmt>::use(loop_stmt, loop_name, result.SourceManager)->ptr;
-    member = coop::global<MemberExpr>::use(member, member_id, result.SourceManager)->ptr;
+    loop_stmt = coop::global<Stmt>::use(loop_stmt, loop_name, result.Context)->ptr;
+    member = coop::global<MemberExpr>::use(member, member_id, result.Context)->ptr;
 
     auto loop_info = &loops[loop_stmt];
     loop_info->identifier = loop_name;
@@ -367,8 +371,8 @@ void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
     coop::logger::out();
 
     //make sure to only use the global versions / unique access points to the nodes
-    parent_loop = coop::global<Stmt>::use(parent_loop, parent_name, result.SourceManager)->ptr;
-    child_loop = coop::global<Stmt>::use(child_loop, child_name, result.SourceManager)->ptr;
+    parent_loop = coop::global<Stmt>::use(parent_loop, parent_name, result.Context)->ptr;
+    child_loop = coop::global<Stmt>::use(child_loop, child_name, result.Context)->ptr;
 
     NestedLoopCallback::parent_child_map[parent_loop].push_back(child_loop);
 }
@@ -385,14 +389,14 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
             if(iter != fields_to_find->end()){
                 //we have found an occurence of a cold field! map it
                 //prevent redundant registration due to multiple includes of the same h/hpp file and make sure to only use the global version of this
+                static coop::unique mem_ids;
                 std::string mem_expr_id = coop::naming::get_stmt_id<MemberExpr>(mem_expr, result.SourceManager);
-                auto global_mem_expr = coop::global<MemberExpr>::get_global(mem_expr_id);
-                if(global_mem_expr){
-                    //already registered this member usage - do nothing
+                if(mem_ids.check(mem_expr_id)){
                     return;
                 }
+
                 coop::ColdFieldCallback::cold_field_occurances[field_decl].push_back({
-                    coop::global<MemberExpr>::use(mem_expr, mem_expr_id, result.SourceManager)->ptr, //registers the mem_expr
+                    coop::global<MemberExpr>::use(mem_expr, mem_expr_id, result.Context)->ptr, //registers the mem_expr
                     ast_context_ptr});
             }
         }
@@ -401,6 +405,9 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
 
 void coop::FindMainFunction::run(const MatchFinder::MatchResult &result){
     main_function_ptr = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
+    main_file = result.SourceManager->getFilename(main_function_ptr->getLocStart());
+    coop::logger::log_stream << "found Main File: " << main_file;
+    coop::logger::out();
 }
 
 void coop::FindDestructor::run(const MatchFinder::MatchResult &result){

@@ -161,8 +161,6 @@ int main(int argc, const char **argv) {
             cxxDeleteExpr(file_match, hasDescendant(declRefExpr().bind(coop_class_s))).bind(coop_deletion_s);
 
 
-
-		Rewriter rewriter;
 		CommonOptionsParser OptionsParser(clang_relevant_options, argv, MyToolCategory);
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 
@@ -329,6 +327,8 @@ int main(int argc, const char **argv) {
 			/*first we need another data aggregation
 				- find all occurances of cold member usages
 				- find the relevant record's destructors
+				- find occurences of splitted classes heap instantiations
+				- find occurences of splitted classes deletions
 			*/
 			std::vector<const FieldDecl*> cold_members;
 			for(int i = 0; i < num_records; ++i){
@@ -339,12 +339,13 @@ int main(int argc, const char **argv) {
 			MatchFinder finder;
 
 			std::vector<coop::FindDestructor*> destructor_finders;
-			coop::FindMainFunction find_main_function_callback(&user_files);
 			coop::FindInstantiations instantiation_finder;
 			coop::FindDeleteCalls deletion_finder;
+			coop::FindMainFunction main_finder;
 
 			finder.addMatcher(delete_calls, &deletion_finder);
-			finder.addMatcher(functionDecl(hasName("main")).bind(coop_function_s), &find_main_function_callback);
+			finder.addMatcher(functionDecl(file_match, hasName("main")).bind(coop_function_s), &main_finder);
+
 			for(int i = 0; i < num_records; ++i){
 				auto &rec = record_stats[i];
 				if(!rec.cold_fields.empty()){ //only consider splitted classes
@@ -356,13 +357,13 @@ int main(int argc, const char **argv) {
 					std::stringstream ss;
 					ss << "~" << rec.record->getNameAsString();
 					finder.addMatcher(
-						cxxDestructorDecl(hasName(ss.str().c_str())).bind(coop_destructor_s),
+						cxxDestructorDecl(file_match, hasName(ss.str().c_str())).bind(coop_destructor_s),
 						df);
 				}
 			}
 
 			//to find the relevant instantiations
-			finder.addMatcher(cxxNewExpr().bind(coop_new_instantiation_s), &instantiation_finder);
+			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
 
 			//apply the matchers to all the ASTs
 			for(unsigned i = 0; i < ASTs.size(); ++i){
@@ -381,12 +382,17 @@ int main(int argc, const char **argv) {
 
 			//traverse all the records -> if they have cold fields -> split them in a cold_data struct
 			std::set<const char *> files_that_need_to_include_free_list;
+			std::set<std::string> files_that_need_to_be_included_in_main;
 			for(int i = 0; i < num_records; ++i){
 				coop::record::record_info &rec = record_stats[i];
 
 				//this check indicates wether or not the record has cold fields
 				if(!rec.cold_fields.empty()){
+					//local POD carrying context information from function to function
 					coop::src_mod::cold_pod_representation cpr;
+
+					cpr.file_name = member_registration_callback.class_file_map[rec.record];
+					cpr.user_include_path = user_include_path_root;
 
 					//create a struct that holds all the field-declarations for the cold fields
 					coop::src_mod::create_cold_struct_for(
@@ -394,46 +400,40 @@ int main(int argc, const char **argv) {
 						&cpr,
 						user_include_path_root,
 						hot_data_allocation_size_in_byte,
-						cold_data_allocation_size_in_byte,
-						&rewriter);
+						cold_data_allocation_size_in_byte
+					);
 					
 					//if the user did not give us an include path that we can copy the free_list template into 
 					//then just inject it into the code directly
 					if(!user_include_path_root){
-						coop::src_mod::create_free_list_for(
-							&cpr,
-							&rewriter
-						);
+						coop::src_mod::create_free_list_for(&cpr);
 					}
 
 					coop::src_mod::add_memory_allocation_to(
 						&cpr,
-						user_include_path_root,
 						hot_data_allocation_size_in_byte,
-						cold_data_allocation_size_in_byte,
-						&rewriter
+						cold_data_allocation_size_in_byte
 					);
 
 					//get rid of all the cold field-declarations in the records
 					// AND
 					//change all appearances of the cold data fields to be referenced by the record's instance
 					for(auto field : rec.cold_fields){
-						coop::src_mod::remove_decl(field, &rewriter);
+						coop::src_mod::remove_decl(field);
 						auto field_usages = coop::ColdFieldCallback::cold_field_occurances[field];
 						for(auto field_usage : field_usages){
-							coop::src_mod::redirect_memExpr_to_cold_struct(field_usage.mem_expr_ptr, &cpr, field_usage.ast_context_ptr, rewriter);
+							coop::src_mod::redirect_memExpr_to_cold_struct(
+								field_usage.mem_expr_ptr,
+								&cpr,
+								field_usage.ast_context_ptr);
 						}
 					}
 
 					//give the record a reference to an instance of this new cold_data_struct
-					coop::src_mod::add_cpr_ref_to(
-						&cpr,
-						&rewriter);
+					coop::src_mod::add_cpr_ref_to(&cpr);
 					
 					//modify/create the record's destructor, to handle free-list fragmentation
-					coop::src_mod::handle_free_list_fragmentation(
-						&cpr,
-						&rewriter);
+					coop::src_mod::handle_free_list_fragmentation(&cpr);
 
 					//if this record is instantiated on the heap by using new anywhere, we
 					//should make sure, that the single instances are NOT distributed in memory but rather be allocated wit spatial locality
@@ -444,7 +444,7 @@ int main(int argc, const char **argv) {
 							//make sure to replace those instantiations with something cachefriendly
 							auto &instantiations = iter->second;
 							for(auto expr_contxt : instantiations){
-								coop::src_mod::handle_new_instantiation(&cpr, expr_contxt, &rewriter);
+								coop::src_mod::handle_new_instantiation(&cpr, expr_contxt);
 							}
 						}
 					}
@@ -456,17 +456,32 @@ int main(int argc, const char **argv) {
 						if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
 							auto &deletions = iter->second;
 							for(auto del_contxt : deletions){
-								coop::src_mod::handle_delete_calls(&cpr, del_contxt, &rewriter);
+								coop::src_mod::handle_delete_calls(&cpr, del_contxt);
 							}
 						}
 					}
 
+					//since we made a split in this record - we need to define the freelist instances coming with it for each TU
+					//if the record was defined in a cpp file - there is no need for that tho
+					if(cpr.is_header_file){
+						coop::src_mod::define_free_list_instances(
+							&cpr,
+							coop::FindMainFunction::main_function_ptr,
+							hot_data_allocation_size_in_byte,
+							cold_data_allocation_size_in_byte
+						);
+					}
+
 					//mark the record's translation unit as one, that needs to include the free_list_template implementation
 					files_that_need_to_include_free_list.insert(member_registration_callback.class_file_map[rec.record].c_str());
+					//if the splitted record was defined in a header the freelist instances will be made extern to be eventually defined
+					//in the main file -> accordingly the main file needs to include the file that defined the record in the first place
+					if(cpr.is_header_file)
+						files_that_need_to_be_included_in_main.insert(cpr.file_name);
 				}
 			}
-			rewriter.overwriteChangedFiles();
-
+			//writes from the rewriter buffers into the actual files
+			coop::src_mod::apply_changes();
 
 			//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
 			//so it can be included by the relevant files
@@ -485,6 +500,16 @@ int main(int argc, const char **argv) {
 					coop::src_mod::include_free_list_hpp(f, coop_free_list_template_file_name);
 				}
 			}
+			//make sure the main file knows about the splitted records
+			if(coop::FindMainFunction::main_function_ptr)
+				for(auto f : files_that_need_to_be_included_in_main){
+					coop::src_mod::include_file(coop::FindMainFunction::main_file.c_str(), f.c_str());
+				}
+			else{
+				coop::logger::log_stream << "couldn't find main file!";
+				coop::logger::err(coop::Should_Exit::NO);
+			}
+
 		coop::logger::out("applying changes to source files", coop::logger::DONE);
 	}
 
@@ -521,26 +546,17 @@ void register_indirect_memberusage_in_loop_functioncalls(
 	coop::FunctionRegistrationCallback &member_usage_callback)
 {
 	std::map<const Stmt*, coop::loop_credentials> purified_map; 
-	coop::logger::log_stream << "[Loop_Functions]::size -> " << loop_functions_callback.loop_function_calls.size();
-	coop::logger::out();
 	//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
 	//get rid of those entries 
 	for(auto &fc : loop_functions_callback.loop_function_calls){
 		bool remove = true;
-		coop::logger::log_stream << fc.second.identifier << ":";
-		coop::logger::out();
 		//for each function in that loop, check wether it is a relevant function
 		for(auto f : fc.second.funcs){
 			auto iter = member_usage_callback.relevant_functions.find(coop::global<FunctionDecl>::get_global(f)->ptr);
 			if(iter != member_usage_callback.relevant_functions.end()){
 				//this function is relevant to us and therefore validates the loop to be relevant
-				coop::logger::log_stream << " yes";
-				coop::logger::out();
 				remove = false;
 				break;
-			}else{
-				coop::logger::log_stream << " no";
-				coop::logger::out();
 			}
 		}
 		if(!remove){
@@ -585,7 +601,6 @@ void create_member_matrices(
 			rec_ref,
 			fields,
 			member_usage_callback);
-
 
 		//loops can be nested and therefore loop A using field 'a' can nest loop B using field 'b'
 		//right now our system wont recognize loop A to indirectly use 'b', we need to recursively check for dependencies like that
@@ -717,9 +732,10 @@ void fill_loop_member_matrix(
 			BUT there can also be implicit member usage in a loop by calling a function, that uses a member
 			so we also need to consider all the functions, that are being called in a loop, and check, wether or
 			not they use relevant members*/
-		coop::logger::depth++;
-		//iterate over all functions that are called inside this loops, if there are any
+
+		//iterate over all functions that are called inside this loop, if there are any
 		auto funcsIter = loop_functions_callback.loop_function_calls.find(loop_mems.first);
+
 		if( funcsIter != loop_functions_callback.loop_function_calls.end()){
 			auto loop_info = funcsIter->second;
 			//the loop has functioncalls - are the functioncalls relevant to us?
@@ -749,7 +765,6 @@ void fill_loop_member_matrix(
 				coop::logger::depth--;
 			}
 		}
-		coop::logger::depth--;
 	}
 }
 

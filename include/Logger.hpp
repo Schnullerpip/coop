@@ -30,7 +30,7 @@ namespace coop{
         /*outs log_stream to out_stream*/
         size_t& out();
 
-        void err(Should_Exit);
+        void err(Should_Exit se = Should_Exit::YES);
 
 
         /*informing the user of a progress*/

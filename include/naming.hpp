@@ -14,6 +14,7 @@ using namespace clang;
 
 namespace coop{
 namespace naming {
+    const char * get_from_end_until(const char *file, const char delimiter);
     const char * get_relevant_token(const char *file);
 
     template<typename T>

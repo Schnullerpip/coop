@@ -1,5 +1,6 @@
-#include "coop_utils.hpp"
-#include "llvm-c/TargetMachine.h"
+#include"coop_utils.hpp"
+#include"llvm-c/TargetMachine.h"
+#include"data.hpp"
 
 
 int coop::get_sizeof_in_bits(const FieldDecl* field){
@@ -37,7 +38,10 @@ void coop::record::record_info::init(
 }
 
 std::vector<const MemberExpr*>* coop::record::record_info::isRelevantFunction(const clang::FunctionDecl* func){
-    auto funcs_iter = relevant_functions->find(func);
+    auto global = coop::global<FunctionDecl>::get_global(func);
+    if(!global)return nullptr;
+
+    auto funcs_iter = relevant_functions->find(global->ptr);
     if(funcs_iter != relevant_functions->end()){
         return &funcs_iter->second;
     }
@@ -46,6 +50,9 @@ std::vector<const MemberExpr*>* coop::record::record_info::isRelevantFunction(co
 
 int coop::record::record_info::isRelevantField(const MemberExpr* memExpr){
     const FieldDecl* field = static_cast<const FieldDecl*>(memExpr->getMemberDecl());
+    auto global = coop::global<FieldDecl>::get_global(field);
+    if(!global)return -1;
+    field = global->ptr;
     if(std::find(fields.begin(), fields.end(), field) != fields.end()){
         return field_idx_mapping[field];
     }
