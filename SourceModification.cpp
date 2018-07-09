@@ -70,7 +70,6 @@ namespace coop{
 
         void apply_changes(){
             for(auto &ast_rewriter : ast_rewriter_map){
-                coop::logger::out("DOING ANOTHER SOURCE MODIFICATION");
                 auto &rewriter = ast_rewriter.second;
                 rewriter.overwriteChangedFiles();
             }
@@ -84,10 +83,10 @@ namespace coop{
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
 
-            //TODO if the file already includes the 'include' dont do it
-            //if(tmpl_file_content.find(coop::naming::get_relevant_token(include)) != std::string::npos){
-            //    return;
-            //}
+            //if the file already includes the 'include' dont do it
+            if(tmpl_file_content.find(coop::naming::get_relevant_token(include)) != std::string::npos){
+                return;
+            }
 
 
             ss << "#include \"" << include << "\"\n" << tmpl_file_content;
@@ -322,9 +321,6 @@ namespace coop{
             std::stringstream ss;
             ss << coop_safe_struct_acces_method_name << "->" << field_decl_name;
 
-            coop::logger::log_stream << "changing: " << coop::naming::get_stmt_id<MemberExpr>(mem_expr, &ast_context->getSourceManager());
-            coop::logger::out();
-
             usage_text.replace(
                 usage_text.find(field_decl_name),
                 field_decl_name.length(),
@@ -377,8 +373,6 @@ namespace coop{
             std::pair<const CXXNewExpr*, ASTContext*> &expr_ctxt)
         {
             std::string new_replacement = get_text(expr_ctxt.first, expr_ctxt.second);
-            coop::logger::log_stream << "FOUND heap instantiation -> " << new_replacement;
-            coop::logger::out();
             std::stringstream ss;
             ss << "new(" << cpr->free_list_instance_name_hot << ".get())";
             replaceAll(new_replacement, "new", ss.str());
