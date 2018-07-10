@@ -23,6 +23,7 @@
 #define FREE_LIST_INSTANCE_COLD "FREE_LIST_INSTANCE_COLD"
 #define FREE_LIST_INSTANCE_HOT "FREE_LIST_INSTANCE_HOT"
 #define RECORD_NAME "RECORD_NAME"
+#define RECORD_TYPE "RECORD_TYPE"
 #define FIELD_INITIALIZERS "FIELD_INITIALIZERS"
 
 namespace {
@@ -226,6 +227,7 @@ namespace coop{
             ss.str("");
 
             replaceAll(tmpl_file_content, RECORD_NAME, cpr->record_name);
+            replaceAll(tmpl_file_content, RECORD_TYPE, cpr->rec_info->record->isStruct() ? "struct" : "class");
 
             if(user_include_path){
                 replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
@@ -278,6 +280,7 @@ namespace coop{
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data)
         {
+            return;
             std::ifstream ifs("src_mod_templates/memory_allocation_template.cpp");
             std::string file_content(
                 (std::istreambuf_iterator<char>(ifs)),
