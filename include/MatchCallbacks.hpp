@@ -94,7 +94,7 @@ namespace coop {
         static std::map<const clang::Stmt*, loop_credentials>
             loops;
 
-        //will associate each loop with an unique idx
+        //will associate each loop with a unique idx
         static std::map<const clang::Stmt*, int>
             loop_idx_mapping;
 

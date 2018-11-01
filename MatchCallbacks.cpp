@@ -94,9 +94,8 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
         coop::global<RecordDecl>::set_global(rd, rd_id);
     }
 
-    std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str().c_str();
+    std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str();
 
-    //coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
     coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
     coop::logger::out();
 
@@ -105,8 +104,8 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
     if(!rd->field_empty()){
         for(auto f : rd->fields()){
             coop::logger::log_stream << "found '" << f->getNameAsString()
-                << "'(" << coop::get_sizeof_in_bits(f) << " bit) in record '"
-                << rd->getNameAsString();
+                << "'(" << coop::get_sizeof_in_bits(f) << " bits) in record '"
+                << rd->getNameAsString() << "'";
             coop::logger::out();
 
             class_fields_map[rd].insert(coop::global<FieldDecl>::use(f)->ptr);
@@ -175,7 +174,7 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
         coop::global<MemberExpr>::set_global(memExpr, id, result.Context);
     }
 
-    coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << " " << func->getNameAsString() << "' " << global_func->id << "using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
+    coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << "' " << global_func->id << " using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
     coop::logger::out();
 
     //cache the function node for later traversal
@@ -234,7 +233,7 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
     loop_function_calls[loop].isForLoop = isForLoop;
     loop_function_calls[loop].funcs.push_back(function_call);
 
-    /*since here we find really each functionCall made inside a loop, we dont want to directly register this loop
+    /*since here we find really each functionCall made inside a loop (not only the relevant ones), we dont want to directly register this loop.
     after the matchers have run over the AST we will aggregate additional data and then filter these loops with information we do not have right now
     remember -> during AST traversal we can never expect the momentary information to be complete*/
 }

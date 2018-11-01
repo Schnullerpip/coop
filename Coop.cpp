@@ -37,13 +37,6 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 // -------------- GENERAL STUFF ----------------------------------------------------------
 
-
-//function prototypes
-void associate_functionCall_ids_with_prototype_ids(
-	coop::FunctionPrototypeRegistrationCallback *fprc,
-	coop::LoopFunctionsCallback *lfc
-);
-
 void recursive_weighting(
 	coop::record::record_info *rec_info,
 	const Stmt* child_loop,
@@ -84,6 +77,7 @@ float field_weight_depth_factor_g = coop_field_weight_depth_factor_f;
 int main(int argc, const char **argv) {
 		//register the tool's options
 		float hot_split_tolerance = .17f;
+
 		{
 			auto split_tolerance_action = [&hot_split_tolerance](const char *size){hot_split_tolerance = atof(size);};
 			coop::input::register_parametered_action("--split-tolerance", "split tolerance factor --split-tolreance <float>", split_tolerance_action);
@@ -148,8 +142,8 @@ int main(int argc, const char **argv) {
 		DeclarationMatcher function_prototypes = functionDecl(file_match, unless(isDefinition())).bind(coop_function_s);
 		StatementMatcher members_used_in_functions = memberExpr(file_match, hasAncestor(functionDecl(isDefinition()).bind(coop_function_s))).bind(coop_member_s);
 
-        StatementMatcher loops = anyOf(forStmt(file_match).bind(coop_loop_s), whileStmt(file_match).bind(coop_loop_s));
-        StatementMatcher loops_distinct = anyOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
+        StatementMatcher loops = 			anyOf(forStmt(file_match).bind(coop_loop_s), whileStmt(file_match).bind(coop_loop_s));
+        StatementMatcher loops_distinct = 	anyOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
         StatementMatcher loops_distinct_each = eachOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
         StatementMatcher function_calls_in_loops = callExpr(file_match, hasAncestor(loops)).bind(coop_function_call_s);
 
@@ -219,11 +213,6 @@ int main(int argc, const char **argv) {
 			new coop::record::record_info[num_records]();
 
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
-
-		//associate_functionCall_ids_with_prototype_ids(
-		//	&prototype_registration_callback,
-		//	&loop_functions_callback
-		//);
 
 		//the loop_registration_callback contains all the loops that directly associate members
 		//loop_functions_callback contains all the loops, that call functions and therefore might indirectly associate members
@@ -532,25 +521,6 @@ int main(int argc, const char **argv) {
 
 	return 0;
 }
-
-void associate_functionCall_ids_with_prototype_ids(
-	coop::FunctionPrototypeRegistrationCallback *fprc,
-	coop::LoopFunctionsCallback *lfc)
-{
-	//iterate over each registered Function that is interesting to us (called inside a loop)
-	for(auto &l_credentials : lfc->loop_function_calls){
-		for(auto &func : l_credentials.second.funcs){
-			//search for a prototype matching g
-			for(auto &p : fprc->function_prototypes){
-				if(p.first->getNameAsString() == func->getNameAsString()){//TODO need better solution than this -> this practically disallows same name functions in different namespaces
-					coop::global<FunctionDecl>::get_global_by_ptr(func)->id = p.second;
-					coop::global<FunctionDecl>::get_global_by_ptr(func)->id = p.second;
-				}
-			}
-		}
-	}
-}
-
 
 void register_indirect_memberusage_in_loop_functioncalls(
 	coop::LoopFunctionsCallback &loop_functions_callback,
