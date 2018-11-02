@@ -33,11 +33,13 @@ struct ptr_ID{
     inline bool operator==(const ptr_ID<T> &other){
         return other.ptr == ptr;
     }
-    inline void take(const ptr_ID<T> &other){
-        ptr = other.ptr;
-        id = other.id;
-        ast_context = other.ast_context;
-    }
+    //inline void take(const ptr_ID<T> &other){
+    //    coop::logger::log_stream << "bending ptr:" << ptr << " to ptr:" << other.ptr;
+    //    coop::logger::out();
+    //    ptr = other.ptr;
+    //    id = other.id;
+    //    ast_context = other.ast_context;
+    //}
     ptr_ID(const T *p, std::string p_id, ASTContext *ast_ctxt):ptr(p),id(p_id),ast_context(ast_ctxt){}
 };
 
@@ -46,9 +48,9 @@ class global {
 public:
     static std::vector<ptr_ID<T>> ptr_id;
     static ptr_ID<T> * get_global(std::string id){
-        for(auto &p_i : ptr_id){
-            if(p_i.id == id){
-                return &p_i;
+        for(size_t i = 0; i < ptr_id.size(); ++i){
+            if(ptr_id[i].id == id){
+                return &ptr_id[i];
             }
         }
         return nullptr;
@@ -57,10 +59,14 @@ public:
         return get_global(coop::naming::get_decl_id<T>(ptr));
     }
     static ptr_ID<T> * get_global_by_ptr(const T *ptr){
-        for(auto &p_i : ptr_id){
-            if(p_i.ptr == ptr){
-                return &p_i;
+        for(size_t i = 0; i < ptr_id.size(); ++i){
+            //coop::logger::log_stream << "comparing " << ptr << " and " << ptr_id[i].ptr;
+            if(ptr_id[i].ptr == ptr){
+                //coop::logger::log_stream << " - match";
+                //coop::logger::out();
+                return &ptr_id[i];
             }
+            //coop::logger::out();
         }
         return nullptr;
     }
@@ -68,6 +74,8 @@ public:
 
     static ptr_ID<T> * set_global(const T *ptr, std::string id, ASTContext *ast_context){
         ptr_id.push_back(ptr_ID<T>(ptr, id, ast_context));
+        //coop::logger::log_stream << "[NEW ID]::" << id;
+        //coop::logger::out();
         return get_global(id);
     }
     static ptr_ID<T> * set_global(const T *ptr, std::string id){
@@ -97,6 +105,32 @@ public:
 
 template<typename T>
 std::vector<ptr_ID<T>> global<T>::ptr_id = {};
+
+
+
+//compositum to abbreviate the AST
+//will be used to replicate the relevant parts of the AST in a simplified way, storing only functions/loops and their relevant children
+struct fl_node {
+    //CLEAN THESE UP!!!!!!! TODO!!!!
+    static std::map<const FunctionDecl *, fl_node *> AST_abbreviation_func;
+    static std::map<const Stmt *, fl_node *> AST_abbreviation_loop;
+
+    fl_node(ptr_ID<FunctionDecl> *f):id(f->id), is_loop(false){}
+    fl_node(ptr_ID<Stmt> *f):id(f->id), is_loop(true){}
+
+    std::string ID(){return id;}
+    bool isLoop(){return is_loop;}
+    bool isFunc(){return !is_loop;}
+
+    std::vector<fl_node*> children;
+    std::vector<fl_node*> parents;
+
+private:
+    const std::string id;
+    bool is_loop;
+};
+
+
 
 }//namespace coop
 

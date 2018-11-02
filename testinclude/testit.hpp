@@ -1,4 +1,6 @@
-struct A {
+struct B {};
+
+struct A : public B{
 	float velocity = 0;
 	float mass = 65;
 	const char * name = "julian";
@@ -9,3 +11,4 @@ struct A {
 float multi(A &a){
 	return a.velocity * a.mass;
 }
+

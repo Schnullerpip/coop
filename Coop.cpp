@@ -141,13 +141,19 @@ int main(int argc, const char **argv) {
 		DeclarationMatcher members = fieldDecl(file_match, hasAncestor(cxxRecordDecl(hasDefinition(), anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
 		DeclarationMatcher function_prototypes = functionDecl(file_match, unless(isDefinition())).bind(coop_function_s);
 		StatementMatcher members_used_in_functions = memberExpr(file_match, hasAncestor(functionDecl(isDefinition()).bind(coop_function_s))).bind(coop_member_s);
-
         StatementMatcher loops = 			anyOf(forStmt(file_match).bind(coop_loop_s), whileStmt(file_match).bind(coop_loop_s));
         StatementMatcher loops_distinct = 	anyOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
         StatementMatcher loops_distinct_each = eachOf(forStmt(file_match).bind(coop_for_loop_s), whileStmt(file_match).bind(coop_while_loop_s));
         StatementMatcher function_calls_in_loops = callExpr(file_match, hasAncestor(loops)).bind(coop_function_call_s);
-
         auto has_loop_ancestor = hasAncestor(loops_distinct_each);
+
+		StatementMatcher ff_child_parent = callExpr(callee(functionDecl(file_match).bind(coop_child_s)), hasAncestor(functionDecl().bind(coop_parent_s)));
+		StatementMatcher fl_child_parent = callExpr(callee(functionDecl(file_match).bind(coop_child_s)), hasAncestor(loops_distinct));
+
+		StatementMatcher ll_child_parent = 	anyOf(forStmt(file_match, has_loop_ancestor).bind(coop_child_for_loop_s),
+												  whileStmt(file_match, has_loop_ancestor).bind(coop_child_while_loop_s));
+		StatementMatcher lf_child_parent = 	stmt(anyOf(forStmt(file_match).bind(coop_child_for_loop_s), whileStmt(file_match).bind(coop_child_while_loop_s)), hasAncestor(functionDecl().bind(coop_parent_s)));
+
         StatementMatcher nested_loops =
             eachOf(forStmt(file_match, has_loop_ancestor).bind(coop_child_for_loop_s),
                   whileStmt(file_match, has_loop_ancestor).bind(coop_child_while_loop_s));
@@ -171,11 +177,19 @@ int main(int argc, const char **argv) {
 		coop::LoopMemberUsageCallback for_loop_member_usages_callback(&user_files);
 		coop::LoopMemberUsageCallback while_loop_member_usages_callback(&user_files);
 		coop::NestedLoopCallback nested_loop_callback(&user_files);
+		coop::ParentedFunctionCallback parented_function_callback;
+		coop::ParentedLoopCallback parented_loop_callback;
 
 		MatchFinder data_aggregation;
 		data_aggregation.addMatcher(classes, &member_registration_callback);
 		data_aggregation.addMatcher(function_prototypes, &prototype_registration_callback);
 		data_aggregation.addMatcher(members_used_in_functions, &member_usage_callback);
+
+		data_aggregation.addMatcher(ff_child_parent, &parented_function_callback);
+		data_aggregation.addMatcher(fl_child_parent, &parented_function_callback);
+		data_aggregation.addMatcher(ll_child_parent, &parented_loop_callback);
+		data_aggregation.addMatcher(lf_child_parent, &parented_loop_callback);
+
 		data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
 		data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
 		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
@@ -213,6 +227,112 @@ int main(int argc, const char **argv) {
 			new coop::record::record_info[num_records]();
 
 		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
+
+		/*
+		now we have all functions, using members -> FunctionRegistrationCallback::relevant_functions
+		and we also have all loops, using members-> LoopMemberUsageCallback::loops 
+
+		to be nest complete it is not enough to now search for all functions containing the relevant loops and vice versa because this can be nested infinitely/theoretically... 
+		we need to recursively search for higher instances of calls -> e.g. loop A is relevant -> search for EACH function as well as EACH loop associating it -> we find function B
+		Since B is now relevant search for EACH function/loop associating it etc. Recursion needs to be considered and ideally somehow remembered as a priority weighing factor since recursion will act loop-like
+		*/
+		//TODO nest completeness
+
+		coop::logger::out("ptr_IDs - functions")++;
+		for(auto &pi : coop::global<FunctionDecl>::ptr_id)
+		{
+			coop::logger::log_stream << pi.ptr << " " << pi.id ;
+			coop::logger::out();
+		}
+		coop::logger::depth--;
+		coop::logger::out("ptr_IDs - loops")++;
+		for(auto &pi : coop::global<Stmt>::ptr_id)
+		{
+			coop::logger::log_stream << pi.ptr << " " << pi.id ;
+			coop::logger::out();
+		}
+		coop::logger::depth--;
+		coop::logger::out("fl_nodes - f")++;
+		for(auto &fn : coop::fl_node::AST_abbreviation_func)
+		{
+			coop::logger::log_stream << fn.second->ID();
+			coop::logger::out();
+		}
+		coop::logger::depth--;
+		coop::logger::out("fl_nodes - l")++;
+		for(auto &fl : coop::fl_node::AST_abbreviation_loop)
+		{
+			coop::logger::log_stream << fl.second->ID();
+			coop::logger::out();
+		}
+		coop::logger::depth--;
+
+		coop::logger::out("Function/Loop parenting")++;
+		for(auto &fn : coop::fl_node::AST_abbreviation_func)
+		{
+			auto node = fn.second;
+			coop::logger::log_stream << node->ID();
+			coop::logger::out()++;
+			for(auto cn : node->children)
+			{
+				if(cn->isFunc()) {
+					coop::logger::log_stream << coop::global<FunctionDecl>::get_global(cn->ID())->ptr;
+				}
+				else{
+					coop::logger::log_stream << coop::global<Stmt>::get_global(cn->ID())->ptr;
+				}
+				coop::logger::log_stream << cn->ID().c_str();
+				coop::logger::out();
+			}
+			coop::logger::depth--;
+		}
+		for(auto &ln : coop::fl_node::AST_abbreviation_loop)
+		{
+			auto node = ln.second;
+			coop::logger::log_stream << node->ID();
+			coop::logger::out()++;
+			for(auto cn : node->children)
+			{
+				if(cn->isFunc()) {
+					coop::logger::log_stream << coop::global<FunctionDecl>::get_global(cn->ID())->ptr;
+				}
+				else{
+					coop::logger::log_stream << coop::global<Stmt>::get_global(cn->ID())->ptr;
+				}
+				coop::logger::log_stream << cn->ID().c_str();
+				coop::logger::out();
+			}
+			coop::logger::depth--;
+		}
+		coop::logger::depth--;
+		//bool nest_completene = false;
+		//do{
+
+		//	//for each relevant function
+		//	for(auto func : coop::FunctionRegistrationCallback::relevant_functions)
+		//	{
+		//		//for each relevant function find the functions, calling it
+		//		std::string fnc_name = func.first->getNameAsString();
+		//		StatementMatcher functions_calling_subject =
+		//			callExpr(file_match, callee(functionDecl(hasName(fnc_name))), hasAncestor(functionDecl().bind(coop_function_s)));
+		//		StatementMatcher loops_calling_subject = 
+		//			callExpr(file_match, callee(functionDecl(hasName(fnc_name))), hasAncestor(loops_distinct_each));
+
+		//		MatchFinder nested_associations;
+		//		nested_associations.addMatcher(functions_calling_subject, &todo);
+		//		nested_associations.addMatcher(loops_calling_subject, &todo);
+
+		//		for(size_t i = 0; i < ASTs.size(); ++i){
+		//			nested_associations.matchAST(ASTs[i]->getASTContext());
+		//		}
+		//		//for each relevant function find the loops, calling it
+		//	}
+		//	//for each relevant loop find the functions, calling it
+		//	//for each relevant loop find the loops, calling it
+
+		//	//if no relevant instance was found we are complete (consider recursion)
+		//	nest_completene = true;
+		//}while(!nest_completene);
 
 		//the loop_registration_callback contains all the loops that directly associate members
 		//loop_functions_callback contains all the loops, that call functions and therefore might indirectly associate members
@@ -282,7 +402,7 @@ int main(int argc, const char **argv) {
 				-> one hot field not linked to any other fields -> 'special snowflake'
 					-> should EVERYTHING else be externalized to the cold struct?
 				-> several hot, logically linked field tuples -> this actually shows a lack of cohesion and could/should be communicated as a possible designflaw -> can/should I fix this?
-				-> cold data that has temporal linkage to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
+				-> cold data that has temporal locality to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
 					'a' should probably just be handled locally (LHS - principle) but is this the purpose of this optimization?
 				-> everything is hot/cold -> basically nothing to hot/cold split -> AOSOA should be applied
 				-> 

@@ -9,6 +9,8 @@
 #include<sstream>
 #include<string>
 
+#include"Logger.hpp"
+
 using namespace clang;
 
 
@@ -25,9 +27,11 @@ namespace naming {
         std::string file_name = get_relevant_token(src_mgr.getFilename(d->getLocation()).str().c_str());
 
         std::stringstream dest;
-        dest << "[decl:" << file_name << ":"
+        dest << "[" << d->getNameAsString() << ":" << file_name << ":"
             << src_mgr.getPresumedLineNumber(d->getLocStart()) << ":"
             << src_mgr.getPresumedColumnNumber(d->getLocStart()) << "]";
+        //coop::logger::log_stream << "CREATED ID: " << dest.str();
+        //coop::logger::out();
         return dest.str();
     }
 
@@ -39,6 +43,8 @@ namespace naming {
         dest << "[stmt:" << file_name << ":"
             << src_mgr->getPresumedLineNumber(s->getLocStart()) << ":"
             << src_mgr->getPresumedColumnNumber(s->getLocStart()) << "]";
+        //coop::logger::log_stream << "CREATED ID: " << dest.str();
+        //coop::logger::out();
         return dest.str();
 
     }

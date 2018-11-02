@@ -71,6 +71,20 @@ namespace coop {
     };
 
 
+
+
+    /* will match on all functions, that call another function */
+    class ParentedFunctionCallback : public MatchFinder::MatchCallback {
+    private:
+        void run(const MatchFinder::MatchResult &result);
+    };
+
+    class ParentedLoopCallback : public MatchFinder::MatchCallback {
+    private:
+        void run(const MatchFinder::MatchResult &result);
+    };
+
+
     /*
         will match on all function calls, that are made inside a loop, so they can later be checked
         against wether or not they use members and therefore those members' datalayout should be optimized

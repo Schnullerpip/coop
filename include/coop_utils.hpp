@@ -39,6 +39,9 @@ using namespace clang::ast_matchers;
 #define coop_for_loop_s "for_loop"
 #define coop_while_loop_s "while_loop"
 
+#define coop_child_s "child"
+#define coop_parent_s "parent"
+
 #define coop_parent_loop_s "parent_loop"
 #define coop_child_for_loop_s "child_for_loop_s"
 #define coop_child_while_loop_s "child_while_loop_s"
@@ -195,6 +198,10 @@ namespace coop{
             }
         };
     }
+
+
+
+
 }
 
 #endif
