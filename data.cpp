@@ -14,4 +14,5 @@ namespace coop{
 
     std::map<const Stmt *, fl_node *>
         fl_node::AST_abbreviation_loop = {};
+
 }//namespace coop

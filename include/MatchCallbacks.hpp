@@ -59,12 +59,17 @@ namespace coop {
     */
     class FunctionRegistrationCallback : public coop::CoopMatchCallback{
     public:
+
+        FunctionRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
+
+        static bool isIndexed(const FunctionDecl *f);
+        static void indexFunction(const FunctionDecl *f);
+        static void registerFunction(const FunctionDecl *f);
+
         //will hold all the functions, that use members and are therefore 'relevant' to us
         static std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
         //will associate each relevant function with a unique index
         static std::map<const FunctionDecl*, int> function_idx_mapping;
-
-        FunctionRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
     private:
         void run(const MatchFinder::MatchResult &result) override;
@@ -112,8 +117,9 @@ namespace coop {
         static std::map<const clang::Stmt*, int>
             loop_idx_mapping;
 
-        static void register_loop(const clang::Stmt* loop);
-        static bool is_registered(const clang::Stmt* loop);
+        static bool isIndexed(const clang::Stmt* loop);
+        static void indexLoop(const clang::Stmt* loop);
+        static void registerLoop(const clang::Stmt* loop, std::string loop_name ,bool isForLoop);
 
         LoopMemberUsageCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
    private:

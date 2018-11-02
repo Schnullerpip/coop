@@ -33,13 +33,6 @@ struct ptr_ID{
     inline bool operator==(const ptr_ID<T> &other){
         return other.ptr == ptr;
     }
-    //inline void take(const ptr_ID<T> &other){
-    //    coop::logger::log_stream << "bending ptr:" << ptr << " to ptr:" << other.ptr;
-    //    coop::logger::out();
-    //    ptr = other.ptr;
-    //    id = other.id;
-    //    ast_context = other.ast_context;
-    //}
     ptr_ID(const T *p, std::string p_id, ASTContext *ast_ctxt):ptr(p),id(p_id),ast_context(ast_ctxt){}
 };
 
@@ -47,6 +40,7 @@ template<typename T>
 class global {
 public:
     static std::vector<ptr_ID<T>> ptr_id;
+
     static ptr_ID<T> * get_global(std::string id){
         for(size_t i = 0; i < ptr_id.size(); ++i){
             if(ptr_id[i].id == id){
@@ -57,18 +51,6 @@ public:
     }
     static ptr_ID<T> * get_global(const T *ptr){
         return get_global(coop::naming::get_decl_id<T>(ptr));
-    }
-    static ptr_ID<T> * get_global_by_ptr(const T *ptr){
-        for(size_t i = 0; i < ptr_id.size(); ++i){
-            //coop::logger::log_stream << "comparing " << ptr << " and " << ptr_id[i].ptr;
-            if(ptr_id[i].ptr == ptr){
-                //coop::logger::log_stream << " - match";
-                //coop::logger::out();
-                return &ptr_id[i];
-            }
-            //coop::logger::out();
-        }
-        return nullptr;
     }
 
 
@@ -108,19 +90,22 @@ std::vector<ptr_ID<T>> global<T>::ptr_id = {};
 
 
 
-//compositum to abbreviate the AST
-//will be used to replicate the relevant parts of the AST in a simplified way, storing only functions/loops and their relevant children
+//composite to abbreviate the AST
+//will be used to replicate the relevant parts of the AST in a simplified way, storing only functions/loops and their children
 struct fl_node {
     //CLEAN THESE UP!!!!!!! TODO!!!!
     static std::map<const FunctionDecl *, fl_node *> AST_abbreviation_func;
     static std::map<const Stmt *, fl_node *> AST_abbreviation_loop;
 
-    fl_node(ptr_ID<FunctionDecl> *f):id(f->id), is_loop(false){}
-    fl_node(ptr_ID<Stmt> *f):id(f->id), is_loop(true){}
+    fl_node(ptr_ID<FunctionDecl> *f):id(f->id), is_loop(false), is_for_loop(false){}
+    fl_node(ptr_ID<Stmt> *f, bool is_for_loop):id(f->id), is_loop(true), is_for_loop(is_for_loop){}
 
     std::string ID(){return id;}
     bool isLoop(){return is_loop;}
+    bool isForLoop(){return is_for_loop;}
     bool isFunc(){return !is_loop;}
+    bool isRelevant(){return is_relevant;}
+    void makeRelevant(){is_relevant = true;}
 
     std::vector<fl_node*> children;
     std::vector<fl_node*> parents;
@@ -128,6 +113,8 @@ struct fl_node {
 private:
     const std::string id;
     bool is_loop;
+    bool is_for_loop;
+    bool is_relevant = false;
 };
 
 

@@ -179,13 +179,30 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
     coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << "' " << global_func->id << " using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
     coop::logger::out();
 
-    //cache the function node for later traversal
-    relevant_functions[func].push_back(memExpr);
 
+    //cache the function node for later traversal
+    registerFunction(func);
+    relevant_functions[func].push_back(memExpr);
+}
+
+bool coop::FunctionRegistrationCallback::isIndexed(const FunctionDecl *func)
+{
+    return function_idx_mapping.count(func) != 0;
+}
+
+void coop::FunctionRegistrationCallback::indexFunction(const FunctionDecl *func)
+{
     static int function_idx = 0;
-    if(function_idx_mapping.count(func) == 0){
+    if(!isIndexed(func)){
         //the key is not present in the map yet
         function_idx_mapping[func] = function_idx++;
+    }
+}
+void coop::FunctionRegistrationCallback::registerFunction(const FunctionDecl *f)
+{
+    if(!isIndexed(f)){
+        relevant_functions.insert({f, {}});
+        indexFunction(f);
     }
 }
 
@@ -227,9 +244,11 @@ void coop::ParentedFunctionCallback::run(const MatchFinder::MatchResult &result)
     }else{
         const Stmt *loop = nullptr;
         std::string loop_name;
+        bool is_for_loop = false;
         if(for_loop_parent){
             loop = for_loop_parent;
             loop_name = coop::naming::get_for_loop_identifier(for_loop_parent, result.SourceManager);
+            is_for_loop = true;
         }else if(while_loop_parent){
             loop = while_loop_parent;
             loop_name = coop::naming::get_while_loop_identifier(while_loop_parent, result.SourceManager);
@@ -242,7 +261,7 @@ void coop::ParentedFunctionCallback::run(const MatchFinder::MatchResult &result)
         if(fl_node::AST_abbreviation_loop.count(loop) == 0)
         {
             //the node does not exist yet
-            parent_node = new coop::fl_node(global_loop);
+            parent_node = new coop::fl_node(global_loop, is_for_loop);
             fl_node::AST_abbreviation_loop[loop] = parent_node;
         }else{ parent_node = fl_node::AST_abbreviation_loop[loop]; }
     }
@@ -266,10 +285,12 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
     coop::fl_node *parent_node = nullptr;
 
     //child is either a for loop or a while loop
+    bool is_for_loop = false;
     if((l_f_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)))
     {
         child = l_f_child;
         child_name = coop::naming::get_for_loop_identifier(l_f_child, result.SourceManager);
+        is_for_loop = true;
     }
     else if((l_w_child = result.Nodes.getNodeAs<WhileStmt>(coop_child_while_loop_s)))
     {
@@ -287,7 +308,7 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
     if(fl_node::AST_abbreviation_loop.count(global_child->ptr) == 0)
     {
         //the node does not exist yet
-        child_node = new coop::fl_node(global_child); 
+        child_node = new coop::fl_node(global_child, is_for_loop); 
         fl_node::AST_abbreviation_loop[global_child->ptr] = child_node;
     } else{ child_node = fl_node::AST_abbreviation_loop[global_child->ptr]; }
 
@@ -310,9 +331,11 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
     }else{
         const Stmt *loop = nullptr;
         std::string loop_name;
+        bool is_for_loop = false;
         if(for_loop_parent){
             loop = for_loop_parent;
             loop_name = coop::naming::get_for_loop_identifier(for_loop_parent, result.SourceManager);
+            is_for_loop = true;
         }else if(while_loop_parent){
             loop = while_loop_parent;
             loop_name = coop::naming::get_while_loop_identifier(while_loop_parent, result.SourceManager);
@@ -325,7 +348,7 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
         if(fl_node::AST_abbreviation_loop.count(loop) == 0)
         {
             //the node does not exist yet
-            parent_node = new coop::fl_node(global_loop);
+            parent_node = new coop::fl_node(global_loop, is_for_loop);
             fl_node::AST_abbreviation_loop[loop] = parent_node;
         }else{ parent_node = fl_node::AST_abbreviation_loop[loop]; }
     }
@@ -391,14 +414,24 @@ void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
 }
 
 /*LoopMemberUsageCallback*/
-bool coop::LoopMemberUsageCallback::is_registered(const clang::Stmt* loop){
+bool coop::LoopMemberUsageCallback::isIndexed(const clang::Stmt* loop){
     return loop_idx_mapping.count(loop) != 0;
 }
-void coop::LoopMemberUsageCallback::register_loop(const clang::Stmt* loop){
-    if(!coop::LoopMemberUsageCallback::is_registered(loop)){
+void coop::LoopMemberUsageCallback::indexLoop(const clang::Stmt* loop){
+    if(!isIndexed(loop)){
         //loop is not yet registered
         static int loop_count = 0;
         loop_idx_mapping[loop] = loop_count++;
+    }
+}
+void coop::LoopMemberUsageCallback::registerLoop(const clang::Stmt* loop, std::string loop_name ,bool isForLoop)
+{
+    if(!isIndexed(loop))
+    {
+        indexLoop(loop);
+        auto loop_info = &loops[loop];
+        loop_info->identifier = loop_name;
+        loop_info->isForLoop = isForLoop;
     }
 }
 
@@ -435,11 +468,8 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
     loop_stmt = coop::global<Stmt>::use(loop_stmt, loop_name, result.Context)->ptr;
     member = coop::global<MemberExpr>::use(member, member_id, result.Context)->ptr;
 
-    auto loop_info = &loops[loop_stmt];
-    loop_info->identifier = loop_name;
-    loop_info->isForLoop = isForLoop;
-    loop_info->member_usages.push_back(member);
-    coop::LoopMemberUsageCallback::register_loop(loop_stmt);
+    registerLoop(loop_stmt, loop_name, isForLoop);
+    loops[loop_stmt].member_usages.push_back(member);
 }
 
 /*NestedLoopCallback*/
