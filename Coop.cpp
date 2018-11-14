@@ -4,6 +4,7 @@
 //std libraries
 #include<stdlib.h>
 #include<math.h>
+#include<algorithm>
 //custom includes
 #include"coop_utils.hpp"
 #include"SystemStateInformation.hpp"
@@ -37,12 +38,19 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
 // -------------- GENERAL STUFF ----------------------------------------------------------
 
+void determineRecursion();
 void reduceASTabbreviation();
+
+void recursive_weighting(
+	coop::record::record_info *rec_ref,
+	coop::fl_node *node
+);
 
 void recursive_weighting(
 	coop::record::record_info *rec_info,
 	const Stmt* child_loop,
-	int depth = 1);
+	int depth = 1
+);
 
 void recursive_loop_memberusage_aggregation(
 	const Stmt* parent,
@@ -53,24 +61,19 @@ void register_indirect_memberusage_in_loop_functioncalls(
 	coop::FunctionRegistrationCallback &member_usage_callback
 );
 void create_member_matrices(
-	coop::record::record_info *record_stats,
-	coop::MemberRegistrationCallback &member_registration_callback,
-	coop::FunctionRegistrationCallback &member_usage_callback,
-	coop::LoopFunctionsCallback &loop_functions_callback,
-	coop::NestedLoopCallback &nested_loop_callback
+	coop::record::record_info *record_stats
 );
-void fill_function_member_matrix(coop::record::record_info &rec_ref,
-		std::set<const FieldDecl*> *fields,
-		coop::FunctionRegistrationCallback &member_usage_callback
+void fill_function_member_matrix(
+	coop::record::record_info &rec_ref,
+	std::set<const FieldDecl*> *fields
 );
 void attribute_function_to_loop(
 	coop::record::record_info &rec_ref,
 	coop::LoopFunctionsCallback &loop_functions_callback
 );
 void fill_loop_member_matrix(
-	std::set<const FieldDecl*> *fields,
 	coop::record::record_info &rec_ref,
-	coop::LoopFunctionsCallback &loop_functions_callback
+	std::set<const FieldDecl*> *fields
 );
 
 float field_weight_depth_factor_g = coop_field_weight_depth_factor_f;
@@ -181,6 +184,7 @@ int main(int argc, const char **argv) {
 		coop::NestedLoopCallback nested_loop_callback(&user_files);
 		coop::ParentedFunctionCallback parented_function_callback;
 		coop::ParentedLoopCallback parented_loop_callback;
+		coop::FindMainFunction find_main_function_callback;
 
 		MatchFinder data_aggregation;
 		data_aggregation.addMatcher(classes, &member_registration_callback);
@@ -273,6 +277,10 @@ int main(int argc, const char **argv) {
 		for(auto &fn : coop::fl_node::AST_abbreviation_func)
 		{
 			auto node = fn.second;
+			if(node->children.empty())
+			{
+				continue;
+			}
 			coop::logger::log_stream << coop::global<FunctionDecl>::get_global(node->ID())->ptr << node->ID();
 			coop::logger::out()++;
 			for(auto cn : node->children)
@@ -291,6 +299,10 @@ int main(int argc, const char **argv) {
 		for(auto &ln : coop::fl_node::AST_abbreviation_loop)
 		{
 			auto node = ln.second;
+			if(node->children.empty())
+			{
+				continue;
+			}
 			coop::logger::log_stream << coop::global<Stmt>::get_global(node->ID())->ptr << node->ID();
 			coop::logger::out()++;
 			for(auto cn : node->children)
@@ -308,33 +320,19 @@ int main(int argc, const char **argv) {
 		}
 		coop::logger::depth--;
 
+		//traverse the AST_abbreviation to find out wether or not recursive function calls exist
+		determineRecursion();
+
 		//reduce the AST abbreviation to the relevant functions/loops
 		//we know which functions/loops are relevant directly -> FunctionRegistrationCallback::relevant_functions LoopMemberUsageCallback::loops
-		//now for each of those relevant entities, we need to iterate over their parents, marking them as relevant too, so they can be accounted for
+		//now for each of those relevant entities, we need to iterate over their parents, marking them as relevant too and registering them, so they can be accounted for
+		//reduceASTabbreviation();
 
-		reduceASTabbreviation();
-
-		//for each relevant function find the loops, calling it
-		//for each relevant function find the functions, calling it
-		//for each relevant loop find the functions, calling it
-		//for each relevant loop find the loops, calling it
-
-		//the loop_registration_callback contains all the loops that directly associate members
-		//loop_functions_callback contains all the loops, that call functions and therefore might indirectly associate members
-		//find out which loop_functions_callback's functions are missing and extend the loop_registration
-		//register_indirect_memberusage_in_loop_functioncalls(
-		//	loop_functions_callback,
-		//	member_usage_callback);
-
+		//starting at root (main-function) go down in the AST abbreviation determining each nodes greatest depth call
 
 		/*now we know the classes (and their members) and the functions as well as all the loops, that use those members
-		now for each class we need to pick their members inside the functions, to see which ones are related*/
-		create_member_matrices(
-			record_stats,
-			member_registration_callback,
-			member_usage_callback,
-			loop_functions_callback,
-			nested_loop_callback);
+		now for each class we need to pick their members inside the functions/loops, to see which ones are related*/
+		create_member_matrices(record_stats);
 
 		coop::logger::depth--;
 		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
@@ -627,6 +625,49 @@ int main(int argc, const char **argv) {
 	return 0;
 }
 
+//returns true if the call includes a direct or indirect recursion
+void recursive_search_for_recursion(coop::fl_node *next, std::vector<coop::fl_node*> node_log)
+{
+	//update the node log
+	node_log.push_back(next);
+
+	for(auto child_node : next->children)
+	{
+		if(!node_log.empty() && std::find(node_log.begin(), node_log.end()-1, child_node) != node_log.end()-1)
+		{
+			//we found a recursive call
+			coop::logger::log_stream << "[RECURSION]:: " << next->ID() << " <-> " << child_node->ID();
+			coop::logger::out();
+			next->recursive_calls.insert(child_node);
+			child_node->recursive_calls.insert(next);
+			return;
+		}
+		else
+		{
+			recursive_search_for_recursion(child_node, node_log);
+		}
+	}
+}
+
+void determineRecursion()
+{
+	coop::logger::out("determining recursion in AST abbreviation", coop::logger::RUNNING)++;
+	for(auto fnc : coop::FunctionRegistrationCallback::relevant_functions)
+	{
+		auto global = coop::global<FunctionDecl>::get_global(fnc.first);
+		if(!global) {
+			continue;
+		}
+		auto node = coop::fl_node::AST_abbreviation_func[global->ptr];
+		if(!node) {
+			continue;
+		}
+		recursive_search_for_recursion(node, {});
+	}
+	coop::logger::depth--;
+	coop::logger::out("determining recursion in AST abbreviation", coop::logger::DONE);
+}
+
 void recursive_relevance_check(coop::fl_node *n)
 {
 	n->makeRelevant();
@@ -644,7 +685,7 @@ void recursive_relevance_check(coop::fl_node *n)
 
 void reduceASTabbreviation()
 {
-	coop::logger::out("reducing ATSabbreviation ", coop::logger::RUNNING)++;
+	coop::logger::out("reducing ASTabbreviation ", coop::logger::RUNNING)++;
 
 	//mark the relevant nodes respectively
 	auto rlvnt_functions = coop::FunctionRegistrationCallback::relevant_functions;
@@ -674,7 +715,7 @@ void reduceASTabbreviation()
 	}
 
 	coop::logger::depth--;
-	coop::logger::out("reducing ATSabbreviation ", coop::logger::DONE);
+	coop::logger::out("reducing ASTabbreviation ", coop::logger::DONE);
 }
 
 void register_indirect_memberusage_in_loop_functioncalls(
@@ -713,16 +754,11 @@ void register_indirect_memberusage_in_loop_functioncalls(
 	loop_functions_callback.loop_function_calls = purified_map;
 }
 
-void create_member_matrices(
-	coop::record::record_info *record_stats,
-	coop::MemberRegistrationCallback &member_registration_callback,
-	coop::FunctionRegistrationCallback &member_usage_callback,
-	coop::LoopFunctionsCallback &loop_functions_callback,
-	coop::NestedLoopCallback &nested_loop_callback)
+void create_member_matrices( coop::record::record_info *record_stats)
 {
 
 	int rec_count = 0;
-	for(auto class_fields_map : member_registration_callback.class_fields_map){
+	for(auto class_fields_map : coop::MemberRegistrationCallback::class_fields_map){
 		const auto rec = class_fields_map.first;
 		const auto fields = &class_fields_map.second;
 
@@ -730,15 +766,14 @@ void create_member_matrices(
 
 		//initializing the info struct
 		rec_ref.init(rec, fields,
-			&member_usage_callback.relevant_functions,
+			&coop::FunctionRegistrationCallback::relevant_functions,
 			&coop::LoopMemberUsageCallback::loops);
 
 
 		//iterate over each function to fill the function-member matrix of this record_info
 		fill_function_member_matrix(
 			rec_ref,
-			fields,
-			member_usage_callback);
+			fields);
 
 		//make sure each loop's memberusages that happen in function calls inside the loop are attributed to it
 		//attribute_function_to_loop(
@@ -773,15 +808,14 @@ void create_member_matrices(
 		//}
 
 		//iterate over each loop to fill the loop-member matrix of this record_info
-		fill_loop_member_matrix(fields,
+		fill_loop_member_matrix(
 			rec_ref,
-			loop_functions_callback);
+			fields);
 
-		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:";
-		coop::logger::out();
+		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:"; coop::logger::out();
 		rec_ref.print_func_mem_mat(coop::FunctionRegistrationCallback::function_idx_mapping);
-		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:";
-		coop::logger::out();
+
+		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:"; coop::logger::out();
 		rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 		
 
@@ -816,28 +850,27 @@ void create_member_matrices(
 }
 
 //iterate over each function to fill the function-member matrix of a record_info
-void fill_function_member_matrix(coop::record::record_info &rec_ref,
-		std::set<const FieldDecl*> *fields,
-		coop::FunctionRegistrationCallback &member_usage_callback)
+void fill_function_member_matrix(
+	coop::record::record_info &rec_ref,
+	std::set<const FieldDecl*> *fields)
 {
-	for(auto func_mems : member_usage_callback.relevant_functions){
+	for(auto func_mems : coop::FunctionRegistrationCallback::relevant_functions){
 		const FunctionDecl* func = func_mems.first;
 		std::vector<const MemberExpr*> *mems = &func_mems.second;
 
-		int func_idx = member_usage_callback.function_idx_mapping[func];
+		int func_idx = coop::FunctionRegistrationCallback::function_idx_mapping[func];
 		//iterate over each member that function uses
 		for(auto mem : *mems){
-
-			coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
-				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
 			const FieldDecl *child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 			auto global_child = coop::global<FieldDecl>::get_global(child);
 			if(!global_child){
-				coop::logger::log_stream << "[ERROR] - there is no global: " << coop::naming::get_decl_id<FieldDecl>(child);
-				coop::logger::err(coop::Should_Exit::YES);
+				continue;
 			}
 			child = global_child->ptr;
+
+			coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
+				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
 			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
 				coop::logger::log_stream << "' - yes";
@@ -897,9 +930,8 @@ void attribute_function_to_loop(
 }
 
 void fill_loop_member_matrix(
-	std::set<const FieldDecl*> *fields,
 	coop::record::record_info &rec_ref,
-	coop::LoopFunctionsCallback &loop_functions_callback )
+	std::set<const FieldDecl*> *fields)
 {
 	auto &loop_mems_map = coop::LoopMemberUsageCallback::loops;
 	auto &loop_idxs = coop::LoopMemberUsageCallback::loop_idx_mapping;
@@ -955,6 +987,16 @@ void recursive_loop_memberusage_aggregation(const Stmt* parent, const Stmt* chil
 			}
 		}
 	}
+}
+
+void recursive_weighting()
+{
+
+}
+
+void recursive_weighting(coop::record::record_info *rec_ref)
+{
+
 }
 
 void recursive_weighting(coop::record::record_info *rec_ref, const Stmt* loop_stmt, int depth){

@@ -2,6 +2,7 @@
 
 using namespace clang;
 
+
 namespace coop{
     global<RecordDecl> g_records;
     global<FieldDecl> g_fields;
@@ -14,5 +15,12 @@ namespace coop{
 
     std::map<const Stmt *, fl_node *>
         fl_node::AST_abbreviation_loop = {};
+
+
+    void fl_node::insert_child(fl_node *child)
+    {
+        child->parents.insert(this);
+        this->children.insert(child);
+    }
 
 }//namespace coop

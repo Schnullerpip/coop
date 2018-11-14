@@ -106,15 +106,20 @@ struct fl_node {
     bool isFunc(){return !is_loop;}
     bool isRelevant(){return is_relevant;}
     void makeRelevant(){is_relevant = true;}
+    int getDepth(){return depth;}
 
-    std::vector<fl_node*> children;
-    std::vector<fl_node*> parents;
+    void insert_child(fl_node *child);
+
+    std::set<fl_node*> children;
+    std::set<fl_node*> parents;
+    std::set<fl_node*> recursive_calls;
 
 private:
     const std::string id;
     bool is_loop;
     bool is_for_loop;
     bool is_relevant = false;
+    int depth = 1; //will hold this nodes greatest depth (it can be called from multiple other nodes, we will care for the greatest call-/loopdepth). Can't be determined at construction but only when the tree is complete
 };
 
 

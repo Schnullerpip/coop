@@ -29,8 +29,8 @@ namespace coop {
     //matchcallback that registeres members of classes for later usage
     class MemberRegistrationCallback : public coop::CoopMatchCallback {
     public:
-        std::map<const RecordDecl*, std::set<const FieldDecl*>> class_fields_map;
-        std::map<const RecordDecl*, std::string> class_file_map;
+        static std::map<const RecordDecl*, std::set<const FieldDecl*>> class_fields_map;
+        static std::map<const RecordDecl*, std::string> class_file_map;
 
         MemberRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
@@ -65,6 +65,7 @@ namespace coop {
         static bool isIndexed(const FunctionDecl *f);
         static void indexFunction(const FunctionDecl *f);
         static void registerFunction(const FunctionDecl *f);
+        static FunctionDecl  const * main_function_ptr;
 
         //will hold all the functions, that use members and are therefore 'relevant' to us
         static std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;

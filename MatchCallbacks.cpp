@@ -5,8 +5,16 @@
 #include"data.hpp"
 
 //static variables
+std::map<const RecordDecl*, std::set<const FieldDecl*>>
+    coop::MemberRegistrationCallback::class_fields_map = {};
+
+std::map<const RecordDecl*, std::string>
+    coop::MemberRegistrationCallback::class_file_map = {};
+
 std::set<std::pair<const FunctionDecl*, std::string>>
     coop::FunctionPrototypeRegistrationCallback::function_prototypes = {};
+
+FunctionDecl const *coop::FunctionRegistrationCallback::main_function_ptr = nullptr;
 
 std::map<const clang::Stmt*, coop::loop_credentials>
     coop::LoopMemberUsageCallback::loops = {};
@@ -179,6 +187,13 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
     coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << "' " << global_func->id << " using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
     coop::logger::out();
 
+    if(!coop::FunctionRegistrationCallback::main_function_ptr && func->isMain())
+    {
+        coop::FunctionRegistrationCallback::main_function_ptr = func;
+        coop::logger::log_stream << "found main function '" << global_func->id << "' ";
+        coop::logger::out();
+    }
+
 
     //cache the function node for later traversal
     registerFunction(func);
@@ -269,8 +284,7 @@ void coop::ParentedFunctionCallback::run(const MatchFinder::MatchResult &result)
     coop::logger::log_stream << "[DEBUG]::-> found func call for " << child_node->ID() << " parented by " << parent_node->ID();
     coop::logger::out();
 
-    parent_node->children.push_back(child_node);
-    child_node->parents.push_back(parent_node);
+    parent_node->insert_child(child_node);
 }
 
 /*ParentedLoopCallback*/
@@ -352,11 +366,9 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
     }
 
     coop::logger::log_stream << "[DEBUG]::-> found loop " << child_node->ID() << " parented by " << parent_node->ID();
-
     coop::logger::out();
 
-    parent_node->children.push_back(child_node);
-    child_node->parents.push_back(parent_node);
+    parent_node->insert_child(child_node);
 }
 
 
@@ -584,9 +596,12 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
 
 void coop::FindMainFunction::run(const MatchFinder::MatchResult &result){
     main_function_ptr = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
-    main_file = result.SourceManager->getFilename(main_function_ptr->getLocStart());
-    coop::logger::log_stream << "found Main File: " << main_file;
-    coop::logger::out();
+    if(main_function_ptr)
+    {
+        main_file = result.SourceManager->getFilename(main_function_ptr->getLocStart());
+        coop::logger::log_stream << "found Main File: " << main_file;
+        coop::logger::out();
+    }
 }
 
 void coop::FindDestructor::run(const MatchFinder::MatchResult &result){
