@@ -309,7 +309,7 @@ int main(int argc, const char **argv) {
 		coop::logger::depth--;
 
 		//reduce the AST abbreviation to the relevant functions/loops
-		//we know which functions/loops are relevant directly FunctionRegistrationCallback::relevant_functions LoopMemberUsageCallback::loops
+		//we know which functions/loops are relevant directly -> FunctionRegistrationCallback::relevant_functions LoopMemberUsageCallback::loops
 		//now for each of those relevant entities, we need to iterate over their parents, marking them as relevant too, so they can be accounted for
 
 		reduceASTabbreviation();
@@ -651,7 +651,10 @@ void reduceASTabbreviation()
 	for(auto f_mems : rlvnt_functions)
 	{
 		const FunctionDecl *func = coop::global<FunctionDecl>::get_global(f_mems.first)->ptr;
-		if(func){ //if that function is a parented function - make shure its parents are makred relevant 
+		if(func){ //if that function is a parented function - make shure its parents are marked relevant 
+
+			//the AST abbreviation remembers child/parent relations. If we find a node for this entity it is in a relation
+			//and we need to go through this
 			coop::fl_node * node = coop::fl_node::AST_abbreviation_func[func];
 			if(node){
 				recursive_relevance_check(node);
@@ -719,10 +722,12 @@ void create_member_matrices(
 {
 
 	int rec_count = 0;
-	for(auto cfm : member_registration_callback.class_fields_map){
-		const auto fields = &cfm.second;
-		const auto rec = cfm.first;
+	for(auto class_fields_map : member_registration_callback.class_fields_map){
+		const auto rec = class_fields_map.first;
+		const auto fields = &class_fields_map.second;
+
 		coop::record::record_info &rec_ref = record_stats[rec_count];
+
 		//initializing the info struct
 		rec_ref.init(rec, fields,
 			&member_usage_callback.relevant_functions,

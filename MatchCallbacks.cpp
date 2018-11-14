@@ -266,9 +266,7 @@ void coop::ParentedFunctionCallback::run(const MatchFinder::MatchResult &result)
         }else{ parent_node = fl_node::AST_abbreviation_loop[loop]; }
     }
 
-    coop::logger::out("aha");
-    coop::logger::log_stream << "[DEBUG]::-> found functioncall for " << child_node->ID() << " parented by " << parent_node->ID();
-
+    coop::logger::log_stream << "[DEBUG]::-> found func call for " << child_node->ID() << " parented by " << parent_node->ID();
     coop::logger::out();
 
     parent_node->children.push_back(child_node);
