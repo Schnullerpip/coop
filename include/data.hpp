@@ -4,6 +4,7 @@
 #include"clang/AST/Decl.h"
 #include"clang/AST/Expr.h"
 #include"clang/AST/Stmt.h"
+
 #include"naming.hpp"
 #include"Logger.hpp"
 
@@ -134,8 +135,20 @@ namespace AST_abbreviation
 
     extern std::set<fl_node*> leaf_nodes;
 
+    //will traverse the ast abbreviation and find all instances of recursion - will also tell the nodes which other nodes they have a recursive relation to
+    void determineRecursion();
+
+    //will mark all parents of relevant nodes to be relevant as well and register them in the FunctionRegistrationCallback::relevant_functions or LoopMemberUsageCallback::loops respectively
+    void reduceASTabbreviation();
+
+    //will find all leaf nodes in the ast abbreviation and store them in leaf_nodes
     void determineLeafNodes();
+
+    //traverses the ast abbreviation counting the loop depths - will consider recursion to be loop-ish
     void determineLoopDepths();
+
+    //makes sure all member usages found in a child node are attributed to its parents respectively
+    void attributeNestedMemberUsages();
 }
 
 
