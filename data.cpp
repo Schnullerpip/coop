@@ -11,7 +11,7 @@ namespace {
         //care for recursion - if we are walking in a circle stop
         if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
         {
-            coop::fl_node::leaf_nodes_func.insert(node);
+            coop::AST_abbreviation::leaf_nodes.insert(node);
             return;
         }
 
@@ -20,12 +20,7 @@ namespace {
         if(node->children.empty())
         {
             //this is a leaf register it
-            if(node->isFunc())
-            {
-                coop::fl_node::leaf_nodes_func.insert(node);
-            }else{
-                coop::fl_node::leaf_nodes_loop.insert(node);
-            }
+            coop::AST_abbreviation::leaf_nodes.insert(node);
             return;
         }
 
@@ -88,38 +83,31 @@ namespace coop{
     global<Stmt> g_stmts;
 
     std::map<const FunctionDecl *, fl_node *>
-        fl_node::AST_abbreviation_func = {};
+        AST_abbreviation::function_nodes = {};
 
     std::map<const Stmt *, fl_node *>
-        fl_node::AST_abbreviation_loop = {};
+        AST_abbreviation::loop_nodes = {};
 
     std::set<fl_node*>
-        fl_node::leaf_nodes_func;
-        
-    std::set<fl_node*>
-        fl_node::leaf_nodes_loop;
+        AST_abbreviation::leaf_nodes;
 
-    void fl_node::determineLeafNodes()
+    void AST_abbreviation::determineLeafNodes()
     {
         //go down each node to find the leafes
-        for(auto func_node : fl_node::AST_abbreviation_func)
+        for(auto func_node : AST_abbreviation::function_nodes)
         {
-            recursiveLeafSearch( func_node.second, {});
+            recursiveLeafSearch(func_node.second, {});
         }
-        for(auto loop_node : fl_node::AST_abbreviation_loop)
+        for(auto loop_node : AST_abbreviation::loop_nodes)
         {
-            recursiveLeafSearch( loop_node.second, {});
+            recursiveLeafSearch(loop_node.second, {});
         }
     }
 
-    void fl_node::determineLoopDepths()
+    void AST_abbreviation::determineLoopDepths()
     {
         //starting at the leaf nodes, go up and count loop depth
-        for(auto leaf : fl_node::leaf_nodes_loop)
-        {
-            recursiveLoopDepthDetermination(leaf, {});
-        }
-        for(auto leaf : fl_node::leaf_nodes_func)
+        for(auto leaf : AST_abbreviation::leaf_nodes)
         {
             recursiveLoopDepthDetermination(leaf, {});
         }

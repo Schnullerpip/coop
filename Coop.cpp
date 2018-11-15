@@ -181,7 +181,6 @@ int main(int argc, const char **argv) {
 		coop::LoopFunctionsCallback loop_functions_callback(&user_files);
 		coop::LoopMemberUsageCallback for_loop_member_usages_callback(&user_files);
 		coop::LoopMemberUsageCallback while_loop_member_usages_callback(&user_files);
-		coop::NestedLoopCallback nested_loop_callback(&user_files);
 		coop::ParentedFunctionCallback parented_function_callback;
 		coop::ParentedLoopCallback parented_loop_callback;
 		coop::FindMainFunction find_main_function_callback;
@@ -199,7 +198,6 @@ int main(int argc, const char **argv) {
 		data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
 		data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
 		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
-		data_aggregation.addMatcher(nested_loops, &nested_loop_callback);
 
 		//generate the ASTs for each compilation unit
 		std::vector<std::unique_ptr<ASTUnit>> ASTs;
@@ -259,14 +257,14 @@ int main(int argc, const char **argv) {
 		}
 		coop::logger::depth--;
 		coop::logger::out("fl_nodes - f")++;
-		for(auto &fn : coop::fl_node::AST_abbreviation_func)
+		for(auto &fn : coop::AST_abbreviation::function_nodes)
 		{
 			coop::logger::log_stream << fn.second->ID();
 			coop::logger::out();
 		}
 		coop::logger::depth--;
 		coop::logger::out("fl_nodes - l")++;
-		for(auto &fl : coop::fl_node::AST_abbreviation_loop)
+		for(auto &fl : coop::AST_abbreviation::loop_nodes)
 		{
 			coop::logger::log_stream << fl.second->ID();
 			coop::logger::out();
@@ -283,13 +281,13 @@ int main(int argc, const char **argv) {
 		reduceASTabbreviation();
 
 		//search for all the leaf nodes
-		coop::fl_node::determineLeafNodes();
+		coop::AST_abbreviation::determineLeafNodes();
 
 		//determine the loop depth of the nodes
-		coop::fl_node::determineLoopDepths();
+		coop::AST_abbreviation::determineLoopDepths();
 
 		coop::logger::out("Function/Loop parenting")++;
-		for(auto &fn : coop::fl_node::AST_abbreviation_func)
+		for(auto &fn : coop::AST_abbreviation::function_nodes)
 		{
 			auto node = fn.second;
 			if(node->children.empty())
@@ -311,7 +309,7 @@ int main(int argc, const char **argv) {
 			}
 			coop::logger::depth--;
 		}
-		for(auto &ln : coop::fl_node::AST_abbreviation_loop)
+		for(auto &ln : coop::AST_abbreviation::loop_nodes)
 		{
 			auto node = ln.second;
 			if(node->children.empty())
@@ -665,9 +663,9 @@ void determineRecursion()
 		if(!global) {
 			continue;
 		}
-		auto iter = coop::fl_node::AST_abbreviation_func.find(global->ptr);
+		auto iter = coop::AST_abbreviation::function_nodes.find(global->ptr);
 		coop::fl_node *node = nullptr;
-		if(iter == coop::fl_node::AST_abbreviation_func.end())
+		if(iter == coop::AST_abbreviation::function_nodes.end())
 		{
 			//this node is not parented by anything - yet relevant because it associates member/s 
 			//most likely to find this kind of function in library code, that doesn't have a main function
@@ -723,13 +721,13 @@ void reduceASTabbreviation()
 			//the AST abbreviation remembers child/parent relations. If we find a node for this entity it is in a relation
 			//and we need to go through this
 			coop::fl_node * node = nullptr;
-			auto iter = coop::fl_node::AST_abbreviation_func.find(func);
-			if(iter == coop::fl_node::AST_abbreviation_func.end())
+			auto iter = coop::AST_abbreviation::function_nodes.find(func);
+			if(iter == coop::AST_abbreviation::function_nodes.end())
 			{
 				//this node is not parented by anything - yet relevant because it associates member/s 
 				//most likely to find this kind of function in library code, that doesn't have a main function
 				//create a node for it on the spot
-				node = coop::fl_node::AST_abbreviation_func[func] = new coop::fl_node(global);
+				node = coop::AST_abbreviation::function_nodes[func] = new coop::fl_node(global);
 			}
 			else {
 				node = iter->second;
@@ -743,7 +741,7 @@ void reduceASTabbreviation()
 	{
 		const Stmt *loop = coop::global<Stmt>::get_global(l_cred.second.identifier)->ptr;
 		if(loop){ //if that loop is a parented loop - make shure its parents are makred relevant 
-			coop::fl_node * node = coop::fl_node::AST_abbreviation_loop[loop];
+			coop::fl_node * node = coop::AST_abbreviation::loop_nodes[loop];
 			if(node){
 				recursive_relevance_check(node, {});
 			}
@@ -812,42 +810,14 @@ void create_member_matrices( coop::record::record_info *record_stats)
 			rec_ref,
 			fields);
 
-		//make sure each loop's memberusages that happen in function calls inside the loop are attributed to it
-		//attribute_function_to_loop(
-		//	rec_ref,
-		//	loop_functions_callback);
-
-		////loops can be nested and therefore loop A using field 'a' can nest loop B using field 'b'
-		////right now our system wont recognize loop A to indirectly use 'b', we need to recursively check for dependencies like that
-		////manually
-
-		////toplevel call -> since we're iterating a mere map that doesn't
-		////understand nested loops we will need to avoid redundant calls
-		////first of all we need to determine wether or not thi is actually a top_level loop (doesn't appear in anyones child list)
-		//for(auto parent_iter : coop::NestedLoopCallback::parent_child_map){
-		//	const Stmt* parent = parent_iter.first;
-		//	bool is_top_level = true;
-		//	for(auto loop_children : coop::NestedLoopCallback::parent_child_map){
-		//		if(parent != loop_children.first){
-		//			for(auto c : loop_children.second){
-		//				if(c == parent){
-		//					//this parent appears in another loop's childrens list - it will be handled by recursion implicitly
-		//					is_top_level = false;
-		//					break;
-		//				}
-		//			}
-		//		}
-		//		if(!is_top_level)break;
-		//	}
-		//	if(is_top_level){
-		//		recursive_loop_memberusage_aggregation(nullptr, parent);
-		//	}
-		//}
-
 		//iterate over each loop to fill the loop-member matrix of this record_info
 		fill_loop_member_matrix(
 			rec_ref,
 			fields);
+
+		//attribute_function_to_loop(
+		//	rec_ref,
+		//	loop_functions_callback);
 
 		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:"; coop::logger::out();
 		rec_ref.print_func_mem_mat(coop::FunctionRegistrationCallback::function_idx_mapping);
@@ -996,63 +966,53 @@ void fill_loop_member_matrix(
 
 //will check each child_loop of a parent_loop wether or not the child has a memberusage.
 //If so the memberusage will also be attributed to the parent loop
-void recursive_loop_memberusage_aggregation(const Stmt* parent, const Stmt* child){
-	//first thing to do is go deep -> has the child any children?
-	auto loop_iter = coop::NestedLoopCallback::parent_child_map.find(child);
-	if(loop_iter != coop::NestedLoopCallback::parent_child_map.end()){
-		for(auto c : coop::NestedLoopCallback::parent_child_map[child]){
-			recursive_loop_memberusage_aggregation(child, c);
-		}
-	}
+//void recursive_loop_memberusage_aggregation(const Stmt* parent, const Stmt* child){
+//	//first thing to do is go deep -> has the child any children?
+//	auto loop_iter = coop::NestedLoopCallback::parent_child_map.find(child);
+//	if(loop_iter != coop::NestedLoopCallback::parent_child_map.end()){
+//		for(auto c : coop::NestedLoopCallback::parent_child_map[child]){
+//			recursive_loop_memberusage_aggregation(child, c);
+//		}
+//	}
+//
+//	if(parent){
+//		//make sure this loop is even relevant to us (is registered)
+//		auto loops = &coop::LoopMemberUsageCallback::loops;
+//		auto mu_iter = loops->find(child),
+//			 mu_iter_parent = loops->find(parent);
+//		if((mu_iter != loops->end()) && (mu_iter_parent != loops->end())){
+//			//now make sure that all member_usages are attributed to the parent
+//			auto &mus = mu_iter->second.member_usages;
+//			auto mus_parent = &mu_iter_parent->second.member_usages;
+//			for(auto mu : mus){
+//				if(std::find(mus_parent->begin(), mus_parent->end(), mu) == mus_parent->end()){
+//					coop::logger::log_stream << mu_iter_parent->second.identifier << " uses "
+//						<< mu->getMemberDecl()->getNameAsString().c_str() << " through " << mu_iter->second.identifier;
+//					coop::logger::out();
+//					mus_parent->push_back(mu);
+//				}
+//			}
+//		}
+//	}
+//}
 
-	if(parent){
-		//make sure this loop is even relevant to us (is registered)
-		auto loops = &coop::LoopMemberUsageCallback::loops;
-		auto mu_iter = loops->find(child),
-			 mu_iter_parent = loops->find(parent);
-		if((mu_iter != loops->end()) && (mu_iter_parent != loops->end())){
-			//now make sure that all member_usages are attributed to the parent
-			auto &mus = mu_iter->second.member_usages;
-			auto mus_parent = &mu_iter_parent->second.member_usages;
-			for(auto mu : mus){
-				if(std::find(mus_parent->begin(), mus_parent->end(), mu) == mus_parent->end()){
-					coop::logger::log_stream << mu_iter_parent->second.identifier << " uses "
-						<< mu->getMemberDecl()->getNameAsString().c_str() << " through " << mu_iter->second.identifier;
-					coop::logger::out();
-					mus_parent->push_back(mu);
-				}
-			}
-		}
-	}
-}
-
-void recursive_weighting()
-{
-
-}
-
-void recursive_weighting(coop::record::record_info *rec_ref)
-{
-
-}
-
-void recursive_weighting(coop::record::record_info *rec_ref, const Stmt* loop_stmt, int depth){
-	//if this child_loop is relevant to us (if it associates members)
-	auto loop_idx_iter = coop::LoopMemberUsageCallback::loop_idx_mapping.find(loop_stmt);
-	if(loop_idx_iter != coop::LoopMemberUsageCallback::loop_idx_mapping.end()){
-		int loop_idx = (*loop_idx_iter).second;
-		//update the current record's member usage statistic
-		for(unsigned i = 0; i < rec_ref->fields.size(); ++i){
-			//since this IS  a nested loop (child loop) we can apply some arbitrary factor to the members'weights
-			rec_ref->loop_mem.at(i, loop_idx) *= pow(field_weight_depth_factor_g, depth);
-		}
-		//since this loop_stmt could also parent other loops -> go recursive
-		auto loop_stmt_iter = coop::NestedLoopCallback::parent_child_map.find(loop_stmt);
-		if(loop_stmt_iter != coop::NestedLoopCallback::parent_child_map.end()){
-			//this loop nests other loops -> go find them and do the same thing over again
-			for(auto child : (*loop_stmt_iter).second){
-				recursive_weighting(rec_ref, child, depth+1);
-			}
-		}
-	}
-}
+//void recursive_weighting(coop::record::record_info *rec_ref, const Stmt* loop_stmt, int depth){
+//	//if this child_loop is relevant to us (if it associates members)
+//	auto loop_idx_iter = coop::LoopMemberUsageCallback::loop_idx_mapping.find(loop_stmt);
+//	if(loop_idx_iter != coop::LoopMemberUsageCallback::loop_idx_mapping.end()){
+//		int loop_idx = (*loop_idx_iter).second;
+//		//update the current record's member usage statistic
+//		for(unsigned i = 0; i < rec_ref->fields.size(); ++i){
+//			//since this IS  a nested loop (child loop) we can apply some arbitrary factor to the members'weights
+//			rec_ref->loop_mem.at(i, loop_idx) *= pow(field_weight_depth_factor_g, depth);
+//		}
+//		//since this loop_stmt could also parent other loops -> go recursive
+//		auto loop_stmt_iter = coop::NestedLoopCallback::parent_child_map.find(loop_stmt);
+//		if(loop_stmt_iter != coop::NestedLoopCallback::parent_child_map.end()){
+//			//this loop nests other loops -> go find them and do the same thing over again
+//			for(auto child : (*loop_stmt_iter).second){
+//				recursive_weighting(rec_ref, child, depth+1);
+//			}
+//		}
+//	}
+//}

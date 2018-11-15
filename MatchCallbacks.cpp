@@ -22,9 +22,6 @@ std::map<const clang::Stmt*, coop::loop_credentials>
 std::map<const clang::Stmt*, int>
     coop::LoopMemberUsageCallback::loop_idx_mapping = {};
 
-std::map<const clang::Stmt*, std::vector<const clang::Stmt*>>
-    coop::NestedLoopCallback::parent_child_map = {};
-
 std::map<const FunctionDecl*, std::vector<const MemberExpr*>>
     coop::FunctionRegistrationCallback::relevant_functions = {};
 
@@ -238,24 +235,24 @@ void coop::ParentedFunctionCallback::run(const MatchFinder::MatchResult &result)
     auto global_func = coop::global<FunctionDecl>::use(fn_child);
     fn_child = global_func->ptr;
 
-    if(fl_node::AST_abbreviation_func.count(fn_child) == 0)
+    if(AST_abbreviation::function_nodes.count(fn_child) == 0)
     {
         //the node does not exist yet
         child_node = new coop::fl_node(global_func); 
-        fl_node::AST_abbreviation_func[fn_child] = child_node;
-    } else{ child_node = fl_node::AST_abbreviation_func[fn_child]; }
+        AST_abbreviation::function_nodes[fn_child] = child_node;
+    } else{ child_node = AST_abbreviation::function_nodes[fn_child]; }
 
     //if the parent is a loop or a function decides the further steps
     if(fn_parent){
         global_func = coop::global<FunctionDecl>::use(fn_parent);
         fn_parent = global_func->ptr;
 
-        if(fl_node::AST_abbreviation_func.count(fn_parent) == 0)
+        if(AST_abbreviation::function_nodes.count(fn_parent) == 0)
         {
             //the node does not exist yet
             parent_node = new coop::fl_node(global_func); 
-            fl_node::AST_abbreviation_func[fn_parent] = parent_node;
-        } else{ parent_node = fl_node::AST_abbreviation_func[fn_parent]; }
+            AST_abbreviation::function_nodes[fn_parent] = parent_node;
+        } else{ parent_node = AST_abbreviation::function_nodes[fn_parent]; }
     }else{
         const Stmt *loop = nullptr;
         std::string loop_name;
@@ -273,12 +270,12 @@ void coop::ParentedFunctionCallback::run(const MatchFinder::MatchResult &result)
         }
 
         auto global_loop = coop::global<Stmt>::use(loop, loop_name, result.Context);
-        if(fl_node::AST_abbreviation_loop.count(loop) == 0)
+        if(AST_abbreviation::loop_nodes.count(loop) == 0)
         {
             //the node does not exist yet
             parent_node = new coop::fl_node(global_loop, is_for_loop);
-            fl_node::AST_abbreviation_loop[loop] = parent_node;
-        }else{ parent_node = fl_node::AST_abbreviation_loop[loop]; }
+            AST_abbreviation::loop_nodes[loop] = parent_node;
+        }else{ parent_node = AST_abbreviation::loop_nodes[loop]; }
     }
 
     coop::logger::log_stream << "[DEBUG]::-> found func call for " << child_node->ID() << " parented by " << parent_node->ID();
@@ -317,12 +314,12 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
     auto global_child = coop::global<Stmt>::use(child, child_name, result.Context);
     child = global_child->ptr;
 
-    if(fl_node::AST_abbreviation_loop.count(global_child->ptr) == 0)
+    if(AST_abbreviation::loop_nodes.count(global_child->ptr) == 0)
     {
         //the node does not exist yet
         child_node = new coop::fl_node(global_child, is_for_loop); 
-        fl_node::AST_abbreviation_loop[global_child->ptr] = child_node;
-    } else{ child_node = fl_node::AST_abbreviation_loop[global_child->ptr]; }
+        AST_abbreviation::loop_nodes[global_child->ptr] = child_node;
+    } else{ child_node = AST_abbreviation::loop_nodes[global_child->ptr]; }
 
     //the loop can be paranted by either a functionDecl or a for/while loop
     const FunctionDecl *fn_parent = result.Nodes.getNodeAs<FunctionDecl>(coop_parent_s);
@@ -334,12 +331,12 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
         auto global_func = coop::global<FunctionDecl>::use(fn_parent);
         fn_parent = global_func->ptr;
 
-        if(fl_node::AST_abbreviation_func.count(fn_parent) == 0)
+        if(AST_abbreviation::function_nodes.count(fn_parent) == 0)
         {
             //the node does not exist yet
             parent_node = new coop::fl_node(global_func); 
-            fl_node::AST_abbreviation_func[fn_parent] = parent_node;
-        } else{ parent_node = fl_node::AST_abbreviation_func[fn_parent]; }
+            AST_abbreviation::function_nodes[fn_parent] = parent_node;
+        } else{ parent_node = AST_abbreviation::function_nodes[fn_parent]; }
     }else{
         const Stmt *loop = nullptr;
         std::string loop_name;
@@ -357,12 +354,12 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
         }
 
         auto global_loop = coop::global<Stmt>::use(loop, loop_name, result.Context);
-        if(fl_node::AST_abbreviation_loop.count(loop) == 0)
+        if(AST_abbreviation::loop_nodes.count(loop) == 0)
         {
             //the node does not exist yet
             parent_node = new coop::fl_node(global_loop, is_for_loop);
-            fl_node::AST_abbreviation_loop[loop] = parent_node;
-        }else{ parent_node = fl_node::AST_abbreviation_loop[loop]; }
+            AST_abbreviation::loop_nodes[loop] = parent_node;
+        }else{ parent_node = AST_abbreviation::loop_nodes[loop]; }
     }
 
     coop::logger::log_stream << "[DEBUG]::-> found loop " << child_node->ID() << " parented by " << parent_node->ID();
@@ -482,91 +479,6 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
     loops[loop_stmt].member_usages.push_back(member);
 }
 
-/*NestedLoopCallback*/
-
-void coop::NestedLoopCallback::traverse_parents(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, std::vector<const Stmt*>*)> callback){
-    for(auto parent_childs : NestedLoopCallback::parent_child_map){
-        auto parent_iter = LoopMemberUsageCallback::loops.find(parent_childs.first);
-        if(parent_iter == LoopMemberUsageCallback::loops.end()){
-            continue;
-        }
-        std::vector<const Stmt*> *children = &parent_childs.second;
-
-        callback(&parent_iter, children);
-    }
-}
-void coop::NestedLoopCallback::traverse_parents_children(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, const Stmt* child)> callback){
-    traverse_parents([&](std::map<const clang::Stmt *, coop::loop_credentials>::iterator *p, std::vector<const Stmt*>* children){
-        for(auto c : *children){
-            callback(p, c);
-        }
-    });
-}
-
-void coop::NestedLoopCallback::print_data(){
-    coop::logger::out("Following 1-tier loop relations were found")++;
-    traverse_parents([](std::map<const clang::Stmt *, coop::loop_credentials>::iterator *parent_iter, std::vector<const Stmt*>* children){
-        auto parent_info = &(**parent_iter).second;
-
-        coop::logger::log_stream << "parent: " << parent_info->identifier;
-        coop::logger::out()++;
-        coop::logger::log_stream << "<";
-        for(auto c : *children){
-            auto child_iter = LoopMemberUsageCallback::loops.find(c);
-            if(child_iter == LoopMemberUsageCallback::loops.end()){
-                continue;
-            }
-            coop::loop_credentials *child_info = &(*child_iter).second;
-            coop::logger::log_stream << child_info->identifier << ", ";
-        }
-        coop::logger::log_stream << ">";
-        coop::logger::out()--;
-    });
-    coop::logger::depth--;
-}
-
-void coop::NestedLoopCallback::run(const MatchFinder::MatchResult &result){
-    SourceManager &srcMgr = result.Context->getSourceManager();
-    Stmt const * parent_loop, *child_loop;
-    std::string parent_name, child_name;
-
-    //find child loop
-    if(const ForStmt *for_loop_child = result.Nodes.getNodeAs<ForStmt>(coop_child_for_loop_s)){
-        child_loop = for_loop_child;
-        child_name = coop::naming::get_for_loop_identifier(for_loop_child, &srcMgr);
-        coop::logger::log_stream << "found CHILD 'for loop' " << child_name;
-    }else if(const WhileStmt *while_loop_child = result.Nodes.getNodeAs<WhileStmt>(coop_child_while_loop_s)){
-        child_loop = while_loop_child;
-        child_name = coop::naming::get_while_loop_identifier(while_loop_child, &srcMgr);
-        coop::logger::log_stream << "found CHILD 'while loop' " << child_name;
-    }
-
-    if(coop::global<Stmt>::get_global(child_name)){
-        //we already registered this child loop - do nothing
-        coop::logger::clear();
-        return;
-    }
-
-    coop::logger::log_stream << " parented by -> ";
-
-    //match parent loop
-    if(const ForStmt *for_loop_parent = result.Nodes.getNodeAs<ForStmt>(coop_for_loop_s)){
-        parent_loop = for_loop_parent;
-        parent_name = coop::naming::get_for_loop_identifier(for_loop_parent, &srcMgr);
-        coop::logger::log_stream << "'for loop' " << parent_name;
-    }else if(const WhileStmt *while_loop_parent = result.Nodes.getNodeAs<WhileStmt>(coop_while_loop_s)){
-        parent_loop = while_loop_parent;
-        parent_name = coop::naming::get_while_loop_identifier(while_loop_parent, &srcMgr);
-        coop::logger::log_stream << "'while loop' " << parent_name;
-    }
-    coop::logger::out();
-
-    //make sure to only use the global versions / unique access points to the nodes
-    parent_loop = coop::global<Stmt>::use(parent_loop, parent_name, result.Context)->ptr;
-    child_loop = coop::global<Stmt>::use(child_loop, child_name, result.Context)->ptr;
-
-    NestedLoopCallback::parent_child_map[parent_loop].push_back(child_loop);
-}
 
 void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
 {

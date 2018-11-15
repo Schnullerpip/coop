@@ -93,16 +93,6 @@ std::vector<ptr_ID<T>> global<T>::ptr_id = {};
 //composite to abbreviate the AST
 //will be used to replicate the relevant parts of the AST in a simplified way, storing only functions/loops and their children
 struct fl_node {
-    //CLEAN THESE UP!!!!!!! TODO!!!!
-    static std::map<const FunctionDecl *, fl_node *> AST_abbreviation_func;
-    static std::map<const Stmt *, fl_node *> AST_abbreviation_loop;
-
-    static std::set<fl_node*> leaf_nodes_func;
-    static std::set<fl_node*> leaf_nodes_loop;
-
-    static void determineLeafNodes();
-    static void determineLoopDepths();
-
     fl_node(ptr_ID<FunctionDecl> *f):id(f->id), is_loop(false), is_for_loop(false){}
     fl_node(ptr_ID<Stmt> *f, bool is_for_loop):id(f->id), is_loop(true), is_for_loop(is_for_loop){}
 
@@ -135,6 +125,18 @@ private:
     Can't be determined at construction but only when the tree is complete*/
     int depth = 0;
 };
+
+namespace AST_abbreviation
+{
+    //CLEAN THESE UP!!!!!!! TODO!!!!
+    extern std::map<const FunctionDecl *, fl_node *> function_nodes;
+    extern std::map<const Stmt *, fl_node *> loop_nodes;
+
+    extern std::set<fl_node*> leaf_nodes;
+
+    void determineLeafNodes();
+    void determineLoopDepths();
+}
 
 
 

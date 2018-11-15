@@ -127,27 +127,6 @@ namespace coop {
         void run(const MatchFinder::MatchResult &result);
    };
 
-   /* Will be used to find nested loops, so the loop member matrices
-      can be adjusted according to loop depth
-      This approach implies that a possible heuristic considers higher loop depth to be a
-      valid indicator for frequent usage */
-    class NestedLoopCallback : public coop::CoopMatchCallback {
-    public:
-        //will cache the found nested loops and save a reference to the immediate parent
-        //deeper nesting needs to be found by iterating over the child_parent_map
-        //careful -> this is a matcherCallback so there wont be complete information during the run method
-        //we will later have to distinct which loops are even relevant to us (associate members directly/indirectly)
-        static std::map<const clang::Stmt*, std::vector<const clang::Stmt*>>
-            parent_child_map;
-
-        NestedLoopCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
-        void traverse_parents(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, std::vector<const Stmt*>*)> callback);
-        void traverse_parents_children(std::function<void (std::map<const clang::Stmt *, coop::loop_credentials>::iterator*, const Stmt* child)>);
-        void print_data();
-    private:
-        void run(const MatchFinder::MatchResult &result);
-    };
-
     /*Will be used to find the cold members of a record*/
     class ColdFieldCallback : public coop::CoopMatchCallback {
     public:
