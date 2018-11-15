@@ -97,6 +97,12 @@ struct fl_node {
     static std::map<const FunctionDecl *, fl_node *> AST_abbreviation_func;
     static std::map<const Stmt *, fl_node *> AST_abbreviation_loop;
 
+    static std::set<fl_node*> leaf_nodes_func;
+    static std::set<fl_node*> leaf_nodes_loop;
+
+    static void determineLeafNodes();
+    static void determineLoopDepths();
+
     fl_node(ptr_ID<FunctionDecl> *f):id(f->id), is_loop(false), is_for_loop(false){}
     fl_node(ptr_ID<Stmt> *f, bool is_for_loop):id(f->id), is_loop(true), is_for_loop(is_for_loop){}
 
@@ -107,6 +113,7 @@ struct fl_node {
     bool isRelevant(){return is_relevant;}
     void makeRelevant(){is_relevant = true;}
     int getDepth(){return depth;}
+    void setDepth(int d){depth = d;}
 
     void insert_child(fl_node *child);
 
@@ -115,11 +122,18 @@ struct fl_node {
     std::set<fl_node*> recursive_calls;
 
 private:
+    /*unique id that can be used to retrieve the global instance of the AST node*/
     const std::string id;
+
     bool is_loop;
     bool is_for_loop;
+
+    /*is true if the node associates a user's member or a loops/function that does so*/
     bool is_relevant = false;
-    int depth = 1; //will hold this nodes greatest depth (it can be called from multiple other nodes, we will care for the greatest call-/loopdepth). Can't be determined at construction but only when the tree is complete
+
+    /*will hold this nodes greatest depth (it can be called from multiple other nodes, we will care for the greatest call-/loopdepth).
+    Can't be determined at construction but only when the tree is complete*/
+    int depth = 0;
 };
 
 

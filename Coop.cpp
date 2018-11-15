@@ -273,6 +273,21 @@ int main(int argc, const char **argv) {
 		}
 		coop::logger::depth--;
 
+
+		//traverse the AST_abbreviation to find out wether or not recursive function calls exist and remember them
+		determineRecursion();
+
+		//reduce the AST abbreviation to the relevant functions/loops
+		//we know which functions/loops are relevant directly -> FunctionRegistrationCallback::relevant_functions LoopMemberUsageCallback::loops
+		//now for each of those relevant entities, we need to iterate over their parents, marking them as relevant too and registering them, so they can be accounted for
+		reduceASTabbreviation();
+
+		//search for all the leaf nodes
+		coop::fl_node::determineLeafNodes();
+
+		//determine the loop depth of the nodes
+		coop::fl_node::determineLoopDepths();
+
 		coop::logger::out("Function/Loop parenting")++;
 		for(auto &fn : coop::fl_node::AST_abbreviation_func)
 		{
@@ -291,7 +306,7 @@ int main(int argc, const char **argv) {
 				else{
 					coop::logger::log_stream << coop::global<Stmt>::get_global(cn->ID())->ptr;
 				}
-				coop::logger::log_stream << cn->ID().c_str();
+				coop::logger::log_stream << cn->ID().c_str() << " - depth[" << cn->getDepth() << "]";
 				coop::logger::out();
 			}
 			coop::logger::depth--;
@@ -313,26 +328,18 @@ int main(int argc, const char **argv) {
 				else{
 					coop::logger::log_stream << coop::global<Stmt>::get_global(cn->ID())->ptr;
 				}
-				coop::logger::log_stream << cn->ID().c_str();
+				coop::logger::log_stream << cn->ID().c_str() << " - depth[" << cn->getDepth() << "]";
 				coop::logger::out();
 			}
 			coop::logger::depth--;
 		}
 		coop::logger::depth--;
 
-		//traverse the AST_abbreviation to find out wether or not recursive function calls exist
-		determineRecursion();
-
-		//reduce the AST abbreviation to the relevant functions/loops
-		//we know which functions/loops are relevant directly -> FunctionRegistrationCallback::relevant_functions LoopMemberUsageCallback::loops
-		//now for each of those relevant entities, we need to iterate over their parents, marking them as relevant too and registering them, so they can be accounted for
-		//reduceASTabbreviation();
-
-		//starting at root (main-function) go down in the AST abbreviation determining each nodes greatest depth call
-
 		/*now we know the classes (and their members) and the functions as well as all the loops, that use those members
 		now for each class we need to pick their members inside the functions/loops, to see which ones are related*/
 		create_member_matrices(record_stats);
+
+		//starting at root (main-function) go down in the AST abbreviation determining each nodes greatest depth call
 
 		coop::logger::depth--;
 		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
@@ -658,9 +665,17 @@ void determineRecursion()
 		if(!global) {
 			continue;
 		}
-		auto node = coop::fl_node::AST_abbreviation_func[global->ptr];
-		if(!node) {
-			continue;
+		auto iter = coop::fl_node::AST_abbreviation_func.find(global->ptr);
+		coop::fl_node *node = nullptr;
+		if(iter == coop::fl_node::AST_abbreviation_func.end())
+		{
+			//this node is not parented by anything - yet relevant because it associates member/s 
+			//most likely to find this kind of function in library code, that doesn't have a main function
+			//create a node for it on the spot
+			node = new coop::fl_node(global);
+		}
+		else{
+			node = iter->second;
 		}
 		recursive_search_for_recursion(node, {});
 	}
@@ -668,8 +683,17 @@ void determineRecursion()
 	coop::logger::out("determining recursion in AST abbreviation", coop::logger::DONE);
 }
 
-void recursive_relevance_check(coop::fl_node *n)
+void recursive_relevance_check(coop::fl_node *n, std::vector<coop::fl_node*> node_log)
 {
+	//if we happen to be in a recursion - stop
+	if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), n) != node_log.end())
+	{
+		//recursion detected
+		return;
+	}
+
+	node_log.push_back(n);
+
 	n->makeRelevant();
 	if(n->isFunc()){
 		coop::FunctionRegistrationCallback::registerFunction(coop::global<FunctionDecl>::get_global(n->ID())->ptr);
@@ -679,7 +703,7 @@ void recursive_relevance_check(coop::fl_node *n)
 
 	for(auto pn : n->parents)
 	{
-		recursive_relevance_check(pn);
+		recursive_relevance_check(pn, node_log);
 	}
 }
 
@@ -691,15 +715,27 @@ void reduceASTabbreviation()
 	auto rlvnt_functions = coop::FunctionRegistrationCallback::relevant_functions;
 	for(auto f_mems : rlvnt_functions)
 	{
-		const FunctionDecl *func = coop::global<FunctionDecl>::get_global(f_mems.first)->ptr;
-		if(func){ //if that function is a parented function - make shure its parents are marked relevant 
+		auto global = coop::global<FunctionDecl>::get_global(f_mems.first);
+		const FunctionDecl *func = global->ptr;
+		if(func){
+			//if that function is a parented function - make shure its parents are marked relevant 
 
 			//the AST abbreviation remembers child/parent relations. If we find a node for this entity it is in a relation
 			//and we need to go through this
-			coop::fl_node * node = coop::fl_node::AST_abbreviation_func[func];
-			if(node){
-				recursive_relevance_check(node);
+			coop::fl_node * node = nullptr;
+			auto iter = coop::fl_node::AST_abbreviation_func.find(func);
+			if(iter == coop::fl_node::AST_abbreviation_func.end())
+			{
+				//this node is not parented by anything - yet relevant because it associates member/s 
+				//most likely to find this kind of function in library code, that doesn't have a main function
+				//create a node for it on the spot
+				node = coop::fl_node::AST_abbreviation_func[func] = new coop::fl_node(global);
 			}
+			else {
+				node = iter->second;
+			}
+			
+			recursive_relevance_check(node, {});
 		}
 	}
 	auto rlvnt_loops = coop::LoopMemberUsageCallback::loops;
@@ -709,7 +745,7 @@ void reduceASTabbreviation()
 		if(loop){ //if that loop is a parented loop - make shure its parents are makred relevant 
 			coop::fl_node * node = coop::fl_node::AST_abbreviation_loop[loop];
 			if(node){
-				recursive_relevance_check(node);
+				recursive_relevance_check(node, {});
 			}
 		}
 	}
@@ -759,7 +795,8 @@ void create_member_matrices( coop::record::record_info *record_stats)
 
 	int rec_count = 0;
 	for(auto class_fields_map : coop::MemberRegistrationCallback::class_fields_map){
-		const auto rec = class_fields_map.first;
+
+		const RecordDecl *rec = class_fields_map.first;
 		const auto fields = &class_fields_map.second;
 
 		coop::record::record_info &rec_ref = record_stats[rec_count];
@@ -844,7 +881,7 @@ void create_member_matrices( coop::record::record_info *record_stats)
 			rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 
 		coop::logger::depth--;
-		coop::logger::out("weighting nested loops", coop::logger::DONE);
+		coop::logger::out("weighting nested loops", coop::logger::TODO);
 		rec_count++;
 	}
 }
@@ -884,7 +921,7 @@ void fill_function_member_matrix(
 }
 
 /*	there can be member usage in a loop either by direct usage or inlined functions
-	BUT there can also be implicit member usage in a loop by calling a function, that uses a member
+	BUT there can also be indirect member usage in a loop by calling a function, that uses a member
 	so we also need to consider all the functions, that are being called in a loop, and check, wether or
 	not they use relevant members*/
 void attribute_function_to_loop(

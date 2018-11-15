@@ -10,7 +10,7 @@ namespace coop{
         std::ostream& out_stream = std::cout;
         std::stringstream log_stream;
 
-        size_t depth = 0;
+        int depth = 0;
 
         void clear(std::stringstream& msg_stream){
             msg_stream.str("");
@@ -18,7 +18,7 @@ namespace coop{
         }
 
         /*outs message to out_stream*/
-        size_t& out(const char* msg, const char* append){
+        int& out(const char* msg, const char* append){
             //getting the time
             time_t now = time(0);
             char* now_s = ctime(&now);
@@ -27,7 +27,7 @@ namespace coop{
             now_s[strln-1]=']';
 
             out_stream << out_prefix << now_s << "-> ";
-            for(size_t i = 0; i < depth; ++i){
+            for(int i = 0; i < (depth >= 0 ? depth : 0); ++i){
                 out_stream << (i == 0 ? "  " : "|  ");
             }
             if(depth > 0){
@@ -39,13 +39,13 @@ namespace coop{
         }
 
         /*outs message to out_stream*/
-        size_t& out(std::stringstream& msg_stream, const char* append){
+        int& out(std::stringstream& msg_stream, const char* append){
             std::string msg = msg_stream.str();
             clear(msg_stream);
             return out(msg.c_str(), append);
         }
 
-        size_t& out(){
+        int& out(){
             return out(log_stream);
         }
 
@@ -59,12 +59,12 @@ namespace coop{
             }
         }
 
-        size_t& out(const char* msg, Progress_Status status){
+        int& out(const char* msg, Progress_Status status){
             return out(msg, status == RUNNING ? " [RUNNING]\n" : status == DONE ? " [DONE]\n" : " [TODO!!!!!!!]\n");
         }
 
         /*outs message to out_stream informing the user of a progress*/
-        size_t& out(std::stringstream& msg_stream, Progress_Status status){
+        int& out(std::stringstream& msg_stream, Progress_Status status){
             std::string msg = msg_stream.str();
             msg_stream.str("");
             msg_stream.clear();
