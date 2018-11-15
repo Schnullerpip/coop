@@ -11,6 +11,7 @@ namespace {
         //care for recursion - if we are walking in a circle stop
         if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
         {
+            coop::fl_node::leaf_nodes_func.insert(node);
             return;
         }
 
@@ -47,7 +48,13 @@ namespace {
         //care for recursion - if we are walking in a circle stop
         if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
         {
+            //assign both parties of the recursion a +1 treating this instance of recursion as 1 loopDepth
             node->setDepth(node->getDepth()+1);
+            coop::fl_node *parent = *(node_log.end()-1);
+
+            if(node != parent)
+                parent->setDepth(parent->getDepth()+1);
+
             return node->getDepth();
         }
         node_log.push_back(node);
@@ -61,8 +68,14 @@ namespace {
             }
         }
 
-        node->setDepth((node->isLoop() ? 1 : 0) + greatest_parent_depth);
-        return node->getDepth();
+        if(node->isLoop())
+        {
+            node->setDepth(1 + greatest_parent_depth);
+            return node->getDepth();
+        }else
+        {
+            return greatest_parent_depth;
+        }
     }
 }
 
