@@ -65,7 +65,11 @@ namespace coop {
         static bool isIndexed(const FunctionDecl *f);
         static void indexFunction(const FunctionDecl *f);
         static void registerFunction(const FunctionDecl *f);
+
+        //holds the main function AT node ptr - if found
         static FunctionDecl  const * main_function_ptr;
+        //holds the name of the file containing a main function - if found. Before usage should always check wether main_function_ptr != nullptr
+        static std::string main_file;
 
         //will hold all the functions, that use members and are therefore 'relevant' to us
         static std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
@@ -152,17 +156,6 @@ namespace coop {
         std::vector<const clang::FieldDecl*>
             *fields_to_find;
         ASTContext *ast_context_ptr;
-
-        void run(const MatchFinder::MatchResult &result);
-    };
-
-    /*will find the main function
-        this entrence is needed to ensure stack allocation for the cold data structs is present when Objects are created
-    */
-    class FindMainFunction : public MatchFinder::MatchCallback {
-    public:
-        static FunctionDecl  const * main_function_ptr;
-        static std::string main_file;
 
         void run(const MatchFinder::MatchResult &result);
     };

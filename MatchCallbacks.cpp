@@ -14,7 +14,10 @@ std::map<const RecordDecl*, std::string>
 std::set<std::pair<const FunctionDecl*, std::string>>
     coop::FunctionPrototypeRegistrationCallback::function_prototypes = {};
 
-FunctionDecl const *coop::FunctionRegistrationCallback::main_function_ptr = nullptr;
+FunctionDecl const *
+    coop::FunctionRegistrationCallback::main_function_ptr = nullptr;
+std::string
+    coop::FunctionRegistrationCallback::main_file = "";
 
 std::map<const clang::Stmt*, coop::loop_credentials>
     coop::LoopMemberUsageCallback::loops = {};
@@ -31,18 +34,11 @@ std::map<const FunctionDecl*, int>
 std::map<const FieldDecl*, std::vector<coop::ColdFieldCallback::memExpr_ASTcon>>
     coop::ColdFieldCallback::cold_field_occurances = {};
 
-FunctionDecl const *
-    coop::FindMainFunction::main_function_ptr = nullptr;
-
 std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>>
     coop::FindInstantiations::instantiations_map = {};
 
 std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>>
     coop::FindDeleteCalls::delete_calls_map = {};
-
-
-std::string
-    coop::FindMainFunction::main_file = "";
 
 //function implementations
 std::stringstream file_regex;
@@ -186,7 +182,9 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
 
     if(!coop::FunctionRegistrationCallback::main_function_ptr && func->isMain())
     {
-        coop::FunctionRegistrationCallback::main_function_ptr = func;
+        FunctionRegistrationCallback::main_function_ptr = func;
+        FunctionRegistrationCallback::main_file = result.SourceManager->getFilename(main_function_ptr->getLocStart());
+
         coop::logger::log_stream << "found main function '" << global_func->id << "' ";
         coop::logger::out();
     }
@@ -503,16 +501,6 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
                     ast_context_ptr});
             }
         }
-    }
-}
-
-void coop::FindMainFunction::run(const MatchFinder::MatchResult &result){
-    main_function_ptr = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
-    if(main_function_ptr)
-    {
-        main_file = result.SourceManager->getFilename(main_function_ptr->getLocStart());
-        coop::logger::log_stream << "found Main File: " << main_file;
-        coop::logger::out();
     }
 }
 

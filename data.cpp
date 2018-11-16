@@ -3,183 +3,12 @@
 
 using namespace clang;
 
-namespace {
-    void recursiveLeafSearch(coop::fl_node *node, std::vector<coop::fl_node*> node_log)
-    {
-        //TODO delete this line! only for debugging
-        if(node == nullptr){coop::logger::out("node pointer is NULL!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1");}
-
-        //care for recursion - if we are walking in a circle stop
-        if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
-        {
-            coop::AST_abbreviation::leaf_nodes.insert(node);
-            return;
-        }
-
-        node_log.push_back(node);
-
-        if(node->children.empty())
-        {
-            //this is a leaf register it
-            coop::AST_abbreviation::leaf_nodes.insert(node);
-            return;
-        }
-
-        for(auto child_node : node->children)
-        {
-            recursiveLeafSearch(child_node, node_log);
-        }
-        return;
-    }
-
-
-    int recursiveLoopDepthDetermination(coop::fl_node *node, std::vector<coop::fl_node *> node_log)
-    {
-        //to prevent multiple calculations through multiple independent occurances of function calls
-        if(node->getDepth() > 0)
-        {
-            return node->getDepth();
-        }
-
-        //care for recursion - if we are walking in a circle stop
-        if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
-        {
-            //assign both parties of the recursion a +1 treating this instance of recursion as 1 loopDepth
-            node->setDepth(node->getDepth()+1);
-            coop::fl_node *parent = *(node_log.end()-1);
-
-            if(node != parent)
-                parent->setDepth(parent->getDepth()+1);
-
-            return node->getDepth();
-        }
-        node_log.push_back(node);
-
-        int greatest_parent_depth = 0;
-        for(auto parent_node : node->parents)
-        {
-            if(int d = recursiveLoopDepthDetermination(parent_node, node_log) > greatest_parent_depth)
-            {
-                greatest_parent_depth = d;
-            }
-        }
-
-        if(node->isLoop())
-        {
-            node->setDepth(1 + greatest_parent_depth);
-            return node->getDepth();
-        }else
-        {
-            return greatest_parent_depth;
-        }
-    }
-
-    void recursiveMemberUsageAttribution(coop::fl_node *node, std::set<coop::fl_node *> node_log)
-    {
-        //care for recursion - if we are walking in a circle stop
-        if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
-        {
-            return;
-        }
-        node_log.insert(node);
-
-
-        //get the childs member_usage container
-        std::vector<const MemberExpr*> *member_usages_child = nullptr;
-        if(node->isLoop())
-        {
-            //we dont need to attribute loops' member_usages to their parents since the CLANG interface will have those listed implicitly for us
-            //in this case we don't want to do anything but go on with the recursion
-        }else{
-            auto global_child = coop::global<FunctionDecl>::get_global(node->ID());
-            member_usages_child = &coop::FunctionRegistrationCallback::relevant_functions[global_child->ptr];
-        }
-
-        //for each parent, make sure they are attributed, to the members they associate indirectly through this child
-        for(auto parent : node->parents)
-        {
-            if(node->isFunc() && parent != node){
-                //get the parents member_usage container
-                std::vector<const MemberExpr*> *member_usages_parent = nullptr;
-                if(parent->isLoop())
-                {
-                    auto global_parent = coop::global<Stmt>::get_global(parent->ID());
-                    auto &loop_credentials_parent = coop::LoopMemberUsageCallback::loops.find(global_parent->ptr)->second;
-                    member_usages_parent = &loop_credentials_parent.member_usages;
-                }
-                else{
-                    auto global_parent = coop::global<FunctionDecl>::get_global(parent->ID());
-                    member_usages_parent = &coop::FunctionRegistrationCallback::relevant_functions[global_parent->ptr];
-                }
-
-                //attribute the childs members to the parent
-                //member_usages_parent->insert(member_usages_parent->begin(), member_usages_child->begin(), member_usages_child->end());
-                coop::logger::log_stream << "[ATTRIBUTING]::";
-                for(auto mem : (*member_usages_child))
-                {
-                    auto iter = std::find(member_usages_parent->begin(), member_usages_parent->end(), mem);
-                    if(iter == member_usages_parent->end())
-                    {
-                        coop::logger::log_stream << mem->getMemberDecl()->getNameAsString().c_str() << " ";
-                        member_usages_parent->push_back(mem);
-                    }
-                }
-                coop::logger::out();
-                coop::logger::log_stream << "from " << node->ID() << " to " << parent->ID();
-                coop::logger::out();
-            }
-            recursiveMemberUsageAttribution(parent, node_log);
-        }
-    }
-
-    //returns true if the call includes a direct or indirect recursion
-    void recursive_search_for_recursion(coop::fl_node *next, std::vector<coop::fl_node*> node_log)
-    {
-        //update the node log
-        node_log.push_back(next);
-
-        for(auto child_node : next->children)
-        {
-            if(!node_log.empty() && std::find(node_log.begin(), node_log.end()-1, child_node) != node_log.end()-1)
-            {
-                //we found a recursive call
-                coop::logger::log_stream << "[RECURSION]:: " << next->ID() << " <-> " << child_node->ID();
-                coop::logger::out();
-                next->recursive_calls.insert(child_node);
-                child_node->recursive_calls.insert(next);
-                return;
-            }
-            else
-            {
-                recursive_search_for_recursion(child_node, node_log);
-            }
-        }
-    }
-
-    void recursive_relevance_check(coop::fl_node *n, std::vector<coop::fl_node*> node_log)
-    {
-        //if we happen to be in a recursion - stop
-        if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), n) != node_log.end())
-        {
-            //recursion detected
-            return;
-        }
-
-        node_log.push_back(n);
-
-        n->makeRelevant();
-        if(n->isFunc()){
-            coop::FunctionRegistrationCallback::registerFunction(coop::global<FunctionDecl>::get_global(n->ID())->ptr);
-        }else{
-            coop::LoopMemberUsageCallback::registerLoop(coop::global<Stmt>::get_global(n->ID())->ptr, n->ID(), n->isForLoop());
-        }
-
-        for(auto pn : n->parents)
-        {
-            recursive_relevance_check(pn, node_log);
-        }
-    }
-}
+//local function prototypes
+void recursiveLeafSearch(coop::fl_node *node, std::vector<coop::fl_node*> node_log);
+int recursiveLoopDepthDetermination(coop::fl_node *node, std::vector<coop::fl_node *> node_log);
+void recursiveMemberUsageAttribution(coop::fl_node *node, std::set<coop::fl_node *> node_log);
+void recursive_search_for_recursion(coop::fl_node *next, std::vector<coop::fl_node*> node_log);
+void recursive_relevance_check(coop::fl_node *n, std::vector<coop::fl_node*> node_log);
 
 
 namespace coop{
@@ -311,3 +140,182 @@ namespace coop{
     }
 
 }//namespace coop
+
+
+
+
+//local function definitions
+
+void recursiveLeafSearch(coop::fl_node *node, std::vector<coop::fl_node*> node_log)
+{
+    //TODO delete this line! only for debugging
+    if(node == nullptr){coop::logger::out("node pointer is NULL!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1");}
+
+    //care for recursion - if we are walking in a circle stop
+    if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
+    {
+        coop::AST_abbreviation::leaf_nodes.insert(node);
+        return;
+    }
+
+    node_log.push_back(node);
+
+    if(node->children.empty())
+    {
+        //this is a leaf register it
+        coop::AST_abbreviation::leaf_nodes.insert(node);
+        return;
+    }
+
+    for(auto child_node : node->children)
+    {
+        recursiveLeafSearch(child_node, node_log);
+    }
+    return;
+}
+
+int recursiveLoopDepthDetermination(coop::fl_node *node, std::vector<coop::fl_node *> node_log)
+{
+    //to prevent multiple calculations through multiple independent occurances of function calls
+    if(node->getDepth() > 0)
+    {
+        return node->getDepth();
+    }
+
+    //care for recursion - if we are walking in a circle stop
+    if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
+    {
+        //assign both parties of the recursion a +1 treating this instance of recursion as 1 loopDepth
+        node->setDepth(node->getDepth()+1);
+        coop::fl_node *parent = *(node_log.end()-1);
+
+        if(node != parent)
+            parent->setDepth(parent->getDepth()+1);
+
+        return node->getDepth();
+    }
+    node_log.push_back(node);
+
+    int greatest_parent_depth = 0;
+    for(auto parent_node : node->parents)
+    {
+        if(int d = recursiveLoopDepthDetermination(parent_node, node_log) > greatest_parent_depth)
+        {
+            greatest_parent_depth = d;
+        }
+    }
+
+    if(node->isLoop())
+    {
+        node->setDepth(1 + greatest_parent_depth);
+        return node->getDepth();
+    }else
+    {
+        return greatest_parent_depth;
+    }
+}
+
+void recursiveMemberUsageAttribution(coop::fl_node *node, std::set<coop::fl_node *> node_log)
+{
+    //care for recursion - if we are walking in a circle stop
+    if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
+    {
+        return;
+    }
+    node_log.insert(node);
+
+
+    //get the childs member_usage container
+    std::vector<const MemberExpr*> *member_usages_child = nullptr;
+    if(node->isLoop())
+    {
+        //we dont need to attribute loops' member_usages to their parents since the CLANG interface will have those listed implicitly for us
+        //in this case we don't want to do anything but go on with the recursion
+    }else{
+        auto global_child = coop::global<FunctionDecl>::get_global(node->ID());
+        member_usages_child = &coop::FunctionRegistrationCallback::relevant_functions[global_child->ptr];
+    }
+
+    //for each parent, make sure they are attributed, to the members they associate indirectly through this child
+    for(auto parent : node->parents)
+    {
+        if(node->isFunc() && parent != node){
+            //get the parents member_usage container
+            std::vector<const MemberExpr*> *member_usages_parent = nullptr;
+            if(parent->isLoop())
+            {
+                auto global_parent = coop::global<Stmt>::get_global(parent->ID());
+                auto &loop_credentials_parent = coop::LoopMemberUsageCallback::loops.find(global_parent->ptr)->second;
+                member_usages_parent = &loop_credentials_parent.member_usages;
+            }
+            else{
+                auto global_parent = coop::global<FunctionDecl>::get_global(parent->ID());
+                member_usages_parent = &coop::FunctionRegistrationCallback::relevant_functions[global_parent->ptr];
+            }
+
+            //attribute the childs members to the parent
+            //member_usages_parent->insert(member_usages_parent->begin(), member_usages_child->begin(), member_usages_child->end());
+            coop::logger::log_stream << "[ATTRIBUTING]::";
+            for(auto mem : (*member_usages_child))
+            {
+                auto iter = std::find(member_usages_parent->begin(), member_usages_parent->end(), mem);
+                if(iter == member_usages_parent->end())
+                {
+                    coop::logger::log_stream << mem->getMemberDecl()->getNameAsString().c_str() << " ";
+                    member_usages_parent->push_back(mem);
+                }
+            }
+            coop::logger::out();
+            coop::logger::log_stream << "from " << node->ID() << " to " << parent->ID();
+            coop::logger::out();
+        }
+        recursiveMemberUsageAttribution(parent, node_log);
+    }
+}
+
+void recursive_search_for_recursion(coop::fl_node *next, std::vector<coop::fl_node*> node_log)
+{
+    //update the node log
+    node_log.push_back(next);
+
+    for(auto child_node : next->children)
+    {
+        if(!node_log.empty() && std::find(node_log.begin(), node_log.end()-1, child_node) != node_log.end()-1)
+        {
+            //we found a recursive call
+            coop::logger::log_stream << "[RECURSION]:: " << next->ID() << " <-> " << child_node->ID();
+            coop::logger::out();
+            next->recursive_calls.insert(child_node);
+            child_node->recursive_calls.insert(next);
+            return;
+        }
+        else
+        {
+            recursive_search_for_recursion(child_node, node_log);
+        }
+    }
+}
+
+void recursive_relevance_check(coop::fl_node *n, std::vector<coop::fl_node*> node_log)
+{
+    //if we happen to be in a recursion - stop
+    if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), n) != node_log.end())
+    {
+        //recursion detected
+        return;
+    }
+
+    node_log.push_back(n);
+
+    n->makeRelevant();
+    if(n->isFunc()){
+        coop::FunctionRegistrationCallback::registerFunction(coop::global<FunctionDecl>::get_global(n->ID())->ptr);
+    }else{
+        coop::LoopMemberUsageCallback::registerLoop(coop::global<Stmt>::get_global(n->ID())->ptr, n->ID(), n->isForLoop());
+    }
+
+    for(auto pn : n->parents)
+    {
+        recursive_relevance_check(pn, node_log);
+    }
+}
