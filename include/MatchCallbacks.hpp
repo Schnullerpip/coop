@@ -72,9 +72,12 @@ namespace coop {
         static std::string main_file;
 
         //will hold all the functions, that use members and are therefore 'relevant' to us
-        static std::map<const FunctionDecl*, std::vector<const MemberExpr*>> relevant_functions;
+        static std::map<const FunctionDecl*, std::vector<const MemberExpr*>>
+            relevant_functions;
+
         //will associate each relevant function with a unique index
-        static std::map<const FunctionDecl*, int> function_idx_mapping;
+        static std::map<const FunctionDecl*, int>
+            function_idx_mapping;
 
     private:
         void run(const MatchFinder::MatchResult &result) override;

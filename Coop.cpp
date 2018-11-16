@@ -64,10 +64,6 @@ void fill_function_member_matrix(
 	coop::record::record_info &rec_ref,
 	std::set<const FieldDecl*> *fields
 );
-void attribute_function_to_loop(
-	coop::record::record_info &rec_ref,
-	coop::LoopFunctionsCallback &loop_functions_callback
-);
 void fill_loop_member_matrix(
 	coop::record::record_info &rec_ref,
 	std::set<const FieldDecl*> *fields
@@ -312,69 +308,92 @@ int main(int argc, const char **argv) {
 
 		for(int i = 0; i < num_records; ++i){
 			coop::record::record_info &rec = record_stats[i];
-			float average = 0;
 
-			//each record may have several fields - iterate them
-			int num_fields = rec.field_idx_mapping.size();
-			for(auto fi : rec.field_idx_mapping){
-				int field_idx = fi.second;
-				//add up the column of the weighted loop_mem map 
-				float accumulated_field_weight = 0;
-				for(unsigned y = 0; y < rec.relevant_loops->size(); ++y){
-					accumulated_field_weight += rec.loop_mem.at(field_idx, y);
+			coop::logger::log_stream << "Record " << rec.record->getNameAsString().c_str();
+			coop::logger::out()++;
+
+				float average = 0;
+
+				//check the functions - if there is a recursive function, make sure to add its members' field weights to the average
+				for(auto func_mems : *rec.relevant_functions)
+				{
+					const FunctionDecl *func = func_mems.first;
+					//get node
+					auto function_node = coop::AST_abbreviation::function_nodes.find(func)->second;
+					if(!function_node->recursive_calls.empty())
+					{
+						//get fnc_idx
+						int function_idx = coop::FunctionRegistrationCallback::function_idx_mapping[func];
+						auto mems = func_mems.second;
+						for(auto mem : mems)
+						{
+							int mem_idx = rec.isRelevantField(mem);
+							if(mem_idx >= 0)
+							{
+								float weight = rec.fun_mem.at(mem_idx, function_idx);
+								rec.field_weights[mem_idx].second += weight;
+								average += weight;
+							}
+						}
+					}
 				}
-				rec.field_weights[field_idx].second = accumulated_field_weight;
-				average += accumulated_field_weight;
 
-				coop::logger::log_stream << fi.first->getNameAsString().c_str() << "'s field weight is: " << rec.field_weights[field_idx].second;
+				//each record may have several fields - iterate them
+				int num_fields = rec.field_idx_mapping.size();
+				for(auto fi : rec.field_idx_mapping){
+					int field_idx = fi.second;
+					//add up the column of the weighted loop_mem map 
+					float accumulated_field_weight = 0;
+					for(unsigned y = 0; y < rec.relevant_loops->size(); ++y){
+						accumulated_field_weight += rec.loop_mem.at(field_idx, y);
+					}
+					rec.field_weights[field_idx].second = accumulated_field_weight;
+					average += accumulated_field_weight;
+				}
+				
+
+				record_field_weight_average[i] = average = average/num_fields;
+
+				coop::logger::log_stream << rec.record->getNameAsString().c_str() << "'s field weight average is: " << average;
 				coop::logger::out();
-			}
-
-			record_field_weight_average[i] = average = average/num_fields;
-
-			coop::logger::log_stream
-				<< "record " << rec.record->getNameAsString().c_str()
-				<< "'s field weight average = " << average;
-			coop::logger::out();
-        
-			/*with the field weight averages (FWAs) we can now narrow down on which members are hot and cold (presumably)
-			we also now know which fields are logically linked (loop/member matrix)
-				-> which fields show temporal locality
-					-> fields appearing in the same rows are logically linked
-			hot members will stay inside the class definition
-			cold members will be transferred to a struct, that defines those members as part of it and a
-			reference to an instance of said struct will be placed in the original record's definition
-
-			several cases need to be considered:
-				-> one hot field not linked to any other fields -> 'special snowflake'
-					-> should EVERYTHING else be externalized to the cold struct?
-				-> several hot, logically linked field tuples -> this actually shows a lack of cohesion and could/should be communicated as a possible designflaw -> can/should I fix this?
-				-> cold data that has temporal locality to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
-					'a' should probably just be handled locally (LHS - principle) but is this the purpose of this optimization?
-				-> everything is hot/cold -> basically nothing to hot/cold split -> AOSOA should be applied
-				-> 
 			
-			what about weightings in general? Should they only be regarded relatively to each other,
-			or should I declare constant weight levels, that indicate wether or not data is hot/cold?
-			*/
+				/*with the field weight averages (FWAs) we can now narrow down on which members are hot and cold (presumably)
+				we also now know which fields are logically linked (loop/member matrix)
+					-> which fields show temporal locality
+						-> fields appearing in the same rows are logically linked
+				hot members will stay inside the class definition
+				cold members will be transferred to a struct, that defines those members as part of it and a
+				reference to an instance of said struct will be placed in the original record's definition
 
-			//now determine the record's hot/cold fields
-			//the record's field_weights is now ordered (descending) so the moment we find a cold value
-			//the following  values will also be cold
-			coop::logger::depth++;
-			float tolerant_average = average * (1-hot_split_tolerance);
-			coop::logger::log_stream << rec.record->getNameAsString().c_str() << "'s tolerant average is: " << tolerant_average;
-			coop::logger::out();
-			for(auto f_w : rec.field_weights){
-				if(f_w.second < tolerant_average){
-					rec.cold_fields.push_back(f_w.first);
-					coop::logger::log_stream << "[cold] " ;
-				}else{
-					coop::logger::log_stream << "[hot] ";
-				}
-				coop::logger::log_stream << f_w.first->getNameAsString();
+				several cases need to be considered:
+					-> one hot field not linked to any other fields -> 'special snowflake'
+						-> should EVERYTHING else be externalized to the cold struct?
+					-> several hot, logically linked field tuples -> this actually shows a lack of cohesion and could/should be communicated as a possible designflaw -> can/should I fix this?
+					-> cold data that has temporal locality to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
+						'a' should probably just be handled locally (LHS - principle) but is this the purpose of this optimization?
+					-> everything is hot/cold -> basically nothing to hot/cold split -> AOSOA should be applied
+					-> 
+				
+				what about weightings in general? Should they only be regarded relatively to each other,
+				or should I declare constant weight levels, that indicate wether or not data is hot/cold?
+				*/
+
+				//now determine the record's hot/cold fields
+				//the record's field_weights is now ordered (descending) so the moment we find a cold value
+				//the following  values will also be cold
+				float tolerant_average = average * (1-hot_split_tolerance);
+				coop::logger::log_stream << rec.record->getNameAsString().c_str() << "'s tolerant average is: " << tolerant_average;
 				coop::logger::out();
-			}
+				for(auto f_w : rec.field_weights){
+					if(f_w.second < tolerant_average){
+						rec.cold_fields.push_back(f_w.first);
+						coop::logger::log_stream << "[cold]\t" ;
+					}else{
+						coop::logger::log_stream << "[hot]\t";
+					}
+					coop::logger::log_stream << f_w.first->getNameAsString() << "\t" << f_w.second;
+					coop::logger::out();
+				}
 			coop::logger::depth--;
 		}
 
@@ -660,14 +679,15 @@ void create_member_matrices( coop::record::record_info *record_stats)
 			rec_ref,
 			fields);
 
-		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix:"; coop::logger::out();
+		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix before weighting:"; coop::logger::out();
 		rec_ref.print_func_mem_mat(coop::FunctionRegistrationCallback::function_idx_mapping);
 
 		coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix before weighting:"; coop::logger::out();
 		rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 		
 
-		coop::logger::out("weighting nested loops", coop::logger::RUNNING)++;
+		coop::logger::out("weighting nested nodes", coop::logger::RUNNING)++;
+			//go through each loop and apply its depth to the rec_refs members
 			for(auto &loop_credentials : *rec_ref.relevant_loops)
 			{
 				const Stmt *loop = loop_credentials.first;
@@ -692,14 +712,72 @@ void create_member_matrices( coop::record::record_info *record_stats)
 
 				int loop_idx = loop_idx_iter->second;
 
+				/*apply cross-referenced weighting - assuming temporal locality by node familiarity. Value this temporal locality
+				we add the number associated members to the members' weights, so their temporal locality has a better chance to result
+				in spatial locality by getting paired we do this BEFORE the vertical accumulation and BEFORE the depth weighting but AFTER
+				the memberusage attribution, because the temporal locality should not be blurred by the field's overall weights and
+				this way member relations through several nested loops are depicted accurately*/
+				{
+					int number_member_associations = 0;
+					for(unsigned i = 0; i < rec_ref.fields.size(); ++i){
+						if(rec_ref.loop_mem.at(i, loop_idx) > 0){
+							number_member_associations += 1;
+						}
+					}
+					if(number_member_associations > 1)
+					{
+						for(unsigned i = 0; i < rec_ref.fields.size(); ++i){
+							float &field_weight = rec_ref.loop_mem.at(i, loop_idx);
+							if(field_weight > 0)
+							{
+								field_weight += number_member_associations;
+							}
+						}
+					}
+				}
+
+				//apply the loopdepth as the power of an arbitrary value to the weight (arbitrary because we can't really determine the actual 'weight' of a runtime dependent loop)
 				for(unsigned i = 0; i < rec_ref.fields.size(); ++i){
-					//since this IS  a nested loop (child loop) we can apply some arbitrary factor to the members'weights
 					rec_ref.loop_mem.at(i, loop_idx) *= pow(field_weight_depth_factor_g, loop_node->getDepth());
 				}
 			}
+
+			//go through each function and apply its depth to the rec_refs members, if the functin is recursive, because in this case we treat it as a loop
+			for(auto &func_mems : *rec_ref.relevant_functions)
+			{
+				const FunctionDecl *func_ptr = func_mems.first;
+
+				//get the functions node (for the depth)
+				auto node_iter = coop::AST_abbreviation::function_nodes.find(func_ptr);
+				if(node_iter == coop::AST_abbreviation::function_nodes.end())
+				{
+					coop::logger::log_stream << "No node found for " << func_ptr->getNameAsString().c_str();
+					coop::logger::err(coop::Should_Exit::YES);
+				}
+				coop::fl_node *function_node = node_iter->second;
+
+				//if the function is recursive, it actually has a depth, otherwise only loop nodes have a depth > 0
+				if(function_node->getDepth() > 0 && !function_node->recursive_calls.empty())
+				{
+					//get that functions idx
+					auto func_idx_iter = coop::FunctionRegistrationCallback::function_idx_mapping.find(func_ptr);
+					if(func_idx_iter == coop::FunctionRegistrationCallback::function_idx_mapping.end())
+					{
+						coop::logger::log_stream << "No idx found for " << func_ptr->getNameAsString().c_str();
+						coop::logger::err(coop::Should_Exit::YES);
+					}
+					int func_idx = func_idx_iter->second;
+
+					for(unsigned i = 0; i < rec_ref.fields.size(); ++i){
+						//since this IS  a nested loop (child loop) we can apply some arbitrary factor to the members'weights
+						rec_ref.fun_mem.at(i, func_idx) *= pow(field_weight_depth_factor_g, function_node->getDepth());
+					}
+				}
+			}
 			
-			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix after weighting:";
-			coop::logger::out();
+			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [FUNCTION/member] matrix after weighting:"; coop::logger::out();
+			rec_ref.print_func_mem_mat(coop::FunctionRegistrationCallback::function_idx_mapping);
+			coop::logger::log_stream << rec_ref.record->getNameAsString().c_str() << "'s [LOOP/member] matrix after weighting:"; coop::logger::out();
 			rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 
 		coop::logger::depth--;
@@ -713,13 +791,30 @@ void fill_function_member_matrix(
 	coop::record::record_info &rec_ref,
 	std::set<const FieldDecl*> *fields)
 {
+	//filter the unique memberexpr callee's from the relevant functions
 	for(auto func_mems : coop::FunctionRegistrationCallback::relevant_functions){
 		const FunctionDecl* func = func_mems.first;
 		std::vector<const MemberExpr*> *mems = &func_mems.second;
 
 		int func_idx = coop::FunctionRegistrationCallback::function_idx_mapping[func];
-		//iterate over each member that function uses
+
+		std::map<const NamedDecl*, std::set<const ValueDecl*>> uniques;
+
+		//iterate over each memberexpression that function uses
 		for(auto mem : *mems){
+
+			//get the referenced decl if there is any and check if we already have it registered
+			auto decRefExp = dyn_cast_or_null<DeclRefExpr>(*mem->child_begin());
+			if(decRefExp)
+			{
+				const NamedDecl *named_decl = decRefExp->getFoundDecl();
+				auto &value_decls = uniques[named_decl];
+				if(value_decls.find(mem->getMemberDecl()) != value_decls.end()){
+					//already registered this one - do nothing
+					continue;;
+				}
+				value_decls.insert(mem->getMemberDecl());
+			}
 
 			const FieldDecl *child = static_cast<const FieldDecl*>(mem->getMemberDecl());
 			auto global_child = coop::global<FieldDecl>::get_global(child);
@@ -742,52 +837,6 @@ void fill_function_member_matrix(
 	}
 }
 
-/*	there can be member usage in a loop either by direct usage or inlined functions
-	BUT there can also be indirect member usage in a loop by calling a function, that uses a member
-	so we also need to consider all the functions, that are being called in a loop, and check, wether or
-	not they use relevant members*/
-void attribute_function_to_loop(
-	coop::record::record_info &rec_ref,
-	coop::LoopFunctionsCallback &loop_functions_callback)
-{
-	auto &loop_mems_map = coop::LoopMemberUsageCallback::loops;
-	for(auto &loop_mems : loop_mems_map){
-
-		//iterate over all functions that are called inside this loop, if there are any
-		auto funcsIter = loop_functions_callback.loop_function_calls.find(loop_mems.first);
-
-		if( funcsIter != loop_functions_callback.loop_function_calls.end()){
-			auto loop_info = funcsIter->second;
-			//the loop has functioncalls - are the functioncalls relevant to us?
-			for(auto func : loop_info.funcs){
-				coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "' loop calls";
-				coop::logger::out()++;
-				//if the function declaration contains a relevant member it must be considered
-				if(std::vector<const MemberExpr*> *mems = rec_ref.isRelevantFunction(func)){
-					//the function is relevant -> iterate over its memberExpr and
-					for(auto mem : *mems){
-
-						//but a function can reference members of different records, so make sure to
-						//only update the ones, that are relevant to us
-						int mem_idx = rec_ref.isRelevantField(mem);
-						if(mem_idx > -1){
-							//means field is indexed by this record -> we have a match!
-							//the field belongs to this record -> go update the matrix!
-							coop::logger::log_stream << "found '" << func->getNameAsString().c_str() << "' using '" 
-								<< mem->getMemberDecl()->getNameAsString().c_str() << "' inside the loop " <<
-									loop_info.identifier;
-							coop::logger::out();
-
-							loop_mems.second.member_usages.push_back(mem);
-						}
-					}
-				}
-				coop::logger::depth--;
-			}
-		}
-	}
-}
-
 void fill_loop_member_matrix(
 	coop::record::record_info &rec_ref,
 	std::set<const FieldDecl*> *fields)
@@ -798,8 +847,24 @@ void fill_loop_member_matrix(
 		auto loop = loop_mems.first;
 		auto loop_info = &coop::LoopMemberUsageCallback::loops[loop];
 		int loop_idx = loop_idxs[loop];
+
+		std::map<const NamedDecl*, std::set<const ValueDecl*>> uniques;
+
 		//iterate over each member that loop uses
 		for(auto mem : loop_mems.second.member_usages){
+
+			//get the referenced decl if there is any and check if we already have it registered
+			auto decRefExp = dyn_cast_or_null<DeclRefExpr>(*mem->child_begin());
+			if(decRefExp)
+			{
+				const NamedDecl *named_decl = decRefExp->getFoundDecl();
+				auto &value_decls = uniques[named_decl];
+				if(value_decls.find(mem->getMemberDecl()) != value_decls.end()){
+					//already registered this one - do nothing
+					continue;;
+				}
+				value_decls.insert(mem->getMemberDecl());
+			}
 
 			coop::logger::log_stream << "checking loop " << loop_info->identifier << " has member '"
 				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();

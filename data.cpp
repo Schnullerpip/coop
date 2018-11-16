@@ -255,19 +255,14 @@ void recursiveMemberUsageAttribution(coop::fl_node *node, std::set<coop::fl_node
 
             //attribute the childs members to the parent
             //member_usages_parent->insert(member_usages_parent->begin(), member_usages_child->begin(), member_usages_child->end());
-            coop::logger::log_stream << "[ATTRIBUTING]::";
             for(auto mem : (*member_usages_child))
             {
                 auto iter = std::find(member_usages_parent->begin(), member_usages_parent->end(), mem);
                 if(iter == member_usages_parent->end())
                 {
-                    coop::logger::log_stream << mem->getMemberDecl()->getNameAsString().c_str() << " ";
                     member_usages_parent->push_back(mem);
                 }
             }
-            coop::logger::out();
-            coop::logger::log_stream << "from " << node->ID() << " to " << parent->ID();
-            coop::logger::out();
         }
         recursiveMemberUsageAttribution(parent, node_log);
     }

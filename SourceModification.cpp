@@ -315,17 +315,12 @@ namespace coop{
             ASTContext *ast_context)
         {
             std::string usage_text = get_text(mem_expr, ast_context);
-            coop::logger::log_stream << "found: '" << usage_text << "'";
-            coop::logger::out();
 
             std::string field_decl_name = mem_expr->getMemberDecl()->getNameAsString();
-            coop::logger::log_stream << "field_decl: '" << field_decl_name << "'";
-            coop::logger::out();
 
             std::stringstream ss;
             ss << coop_safe_struct_acces_method_name << "->" << field_decl_name;
 
-            coop::logger::out(ss.str().c_str());
 
             //usage_text.replace(
             //    usage_text.find(field_decl_name),
