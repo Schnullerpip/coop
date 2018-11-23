@@ -106,6 +106,9 @@ int main(int argc, const char **argv) {
 			coop::logger::out();
 		});
 
+		bool user_wants_to_confirm_each_record = false;
+		coop::input::register_parameterless_action("--confirm-records", "makes you ask for permission before touching any record", [&user_wants_to_confirm_each_record](){user_wants_to_confirm_each_record = true;});
+
 		int clang_relevant_options =
 			coop::input::resolve_actions(argc, argv);
 
@@ -464,6 +467,22 @@ int main(int argc, const char **argv) {
 			std::set<std::string> files_that_need_to_be_included_in_main;
 			for(int i = 0; i < num_records; ++i){
 				coop::record::record_info &rec = record_stats[i];
+
+				if(user_wants_to_confirm_each_record)
+				{
+					std::string input = "n";
+					coop::logger::log_stream << "now touching " << rec.record->getNameAsString().c_str() << ". Allow coop to apply changes (y)?";
+					coop::logger::out();
+					if(!std::getline(std::cin, input))
+					{
+						coop::logger::log_stream << "could not process user input";
+						coop::logger::err(coop::YES);
+					}
+					if(!(input == "y" || input == "Y"))
+					{
+						continue;
+					}
+				}
 
 				//this check indicates wether or not the record has cold fields
 				if(!rec.cold_fields.empty()){
