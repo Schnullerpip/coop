@@ -77,42 +77,46 @@ int main(int argc, const char **argv) {
 		float hot_split_tolerance = .17f;
 
 		{
-			auto split_tolerance_action = [&hot_split_tolerance](const char *size){hot_split_tolerance = atof(size);};
-			coop::input::register_parametered_action("--split-tolerance", "split tolerance factor --split-tolreance <float>", split_tolerance_action);
-			coop::input::register_parametered_action("-st", "split tolerance factor -st <float>", split_tolerance_action);
+			auto split_tolerance_action = [&hot_split_tolerance](std::vector<std::string> args){
+				hot_split_tolerance = atof(args[0].c_str());
+			};
+			coop::input::register_parametered_config("split-tolerance", split_tolerance_action);
 		}
 
 		bool apply_changes_to_source_files = true;
-		coop::input::register_parameterless_action("--analyze-only", "will not let coop do any actual changes to the source files", [&apply_changes_to_source_files](){apply_changes_to_source_files = false;});
+		coop::input::register_parameterless_config("analyze-only", [&apply_changes_to_source_files](){
+			apply_changes_to_source_files = false;
+			coop::logger::out("[Config]::coop will not apply any sorce transformations");
+			});
 
 		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size_i;
-		coop::input::register_parametered_action("--hot-size", "set the default allocation size for hot data --hot-size <int>", [&hot_data_allocation_size_in_byte](const char *size){
-			hot_data_allocation_size_in_byte = atoi(size);
+		coop::input::register_parametered_config("hot-size", [&hot_data_allocation_size_in_byte](std::vector<std::string> args){
+			hot_data_allocation_size_in_byte = atoi(args[0].c_str());
 		});
 
 		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size_i;
-		coop::input::register_parametered_action("--cold-size", "set the default allocation size for cold data --cold-size <int>", [&cold_data_allocation_size_in_byte](const char *size){
-			cold_data_allocation_size_in_byte = atoi(size);
+		coop::input::register_parametered_config("cold-size", [&cold_data_allocation_size_in_byte](std::vector<std::string> args){
+			cold_data_allocation_size_in_byte = atoi(args[0].c_str());
 		});
 
-		coop::input::register_parametered_action("--depth-factor", "decides depth dependent weighting of members --depth-factor 2.0", [](const char *factor){
-			field_weight_depth_factor_g = atof(factor);
+		coop::input::register_parametered_config("depth-factor", [](std::vector<std::string> args){
+			field_weight_depth_factor_g = atof(args[0].c_str());
 		});
 
-		const char * user_include_path_root = nullptr;
-		coop::input::register_parametered_action("-i", "coop will place files in this include root -i <directory_path>", [&user_include_path_root](const char * path){
-			user_include_path_root = path;
-			coop::logger::log_stream << "user's given include path is: " << user_include_path_root;
+		std::string user_include_path_root = "";
+		coop::input::register_parametered_config("user-include-root", [&user_include_path_root](std::vector<std::string> args){
+			user_include_path_root = args[0];
+			coop::logger::log_stream << "[Config]::users include root: " << user_include_path_root;
 			coop::logger::out();
 		});
 
 		bool user_wants_to_confirm_each_record = false;
-		coop::input::register_parameterless_action("--confirm-records", "makes you ask for permission before touching any record", [&user_wants_to_confirm_each_record](){user_wants_to_confirm_each_record = true;});
-
-		int clang_relevant_options =
-			coop::input::resolve_actions(argc, argv);
+		coop::input::register_parameterless_config("confirm-record-changes", [&user_wants_to_confirm_each_record](){user_wants_to_confirm_each_record = true;});
 
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING)++;
+
+		coop::input::resolve_config();
+
 		coop::logger::out("retreiving system information", coop::logger::RUNNING)++;
 
 			coop::system::cache_credentials l1;
@@ -136,7 +140,10 @@ int main(int argc, const char **argv) {
 		}
 
 		//with the user files defined as a match regex we can now initialize the matchers
-		auto file_match = isExpansionInFileMatching(coop::match::get_file_regex_match_condition(user_include_path_root));
+		std::string file_match_string = coop::match::get_file_regex_match_condition((user_include_path_root.empty() ? nullptr : user_include_path_root.c_str()));
+		coop::logger::log_stream << "file_match: '" << file_match_string << "'";
+		coop::logger::out();
+		auto file_match = isExpansionInFileMatching(file_match_string);
 
         DeclarationMatcher classes = cxxRecordDecl(file_match, hasDefinition(), unless(isUnion())).bind(coop_class_s);
 		DeclarationMatcher members = fieldDecl(file_match, hasAncestor(cxxRecordDecl(hasDefinition(), anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
@@ -168,7 +175,7 @@ int main(int argc, const char **argv) {
             cxxDeleteExpr(file_match, hasDescendant(declRefExpr().bind(coop_class_s))).bind(coop_deletion_s);
 
 
-		CommonOptionsParser OptionsParser(clang_relevant_options, argv, MyToolCategory);
+		CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
 		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 
 		coop::MemberRegistrationCallback member_registration_callback(&user_files);
@@ -194,13 +201,14 @@ int main(int argc, const char **argv) {
 		data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
 		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
 
-		//generate the ASTs for each compilation unit
-		std::vector<std::unique_ptr<ASTUnit>> ASTs;
-		int system_state = Tool.buildASTs(ASTs);
 	coop::logger::depth--;
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
 
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
+
+		//generate the ASTs for each compilation unit
+		std::vector<std::unique_ptr<ASTUnit>> ASTs;
+		int system_state = Tool.buildASTs(ASTs);
 
 		//run the matchers/callbacks
 		for(unsigned i = 0; i < ASTs.size(); ++i){
@@ -217,6 +225,24 @@ int main(int argc, const char **argv) {
 		member_registration_callback.printData();
 		coop::logger::depth--;
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::DONE);
+
+
+
+	//if there are no records or no records were found just stop..
+	if(member_registration_callback.class_fields_map.empty())
+	{
+		coop::logger::out("No Records (Classes/Structs) were found in the given sources");
+		if(user_include_path_root.empty())
+		{
+			coop::logger::log_stream << "There is no 'user-include-root' set in coop's local config file! This might very well be the issue!";
+			coop::logger::out();
+		}
+		coop::logger::out("System exit");
+		exit(1);
+	}
+
+
+
 
 	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
 		const int num_records = member_registration_callback.class_fields_map.size();
@@ -493,7 +519,7 @@ int main(int argc, const char **argv) {
 					cpr.rec_info = &rec;
 					cpr.file_name = member_registration_callback.class_file_map[rec.record];
 					cpr.record_name = rec.record->getNameAsString();
-					cpr.user_include_path = user_include_path_root;
+					cpr.user_include_path = user_include_path_root.c_str();
 					cpr.qualified_record_name = rec.record->getQualifiedNameAsString();
 					cpr.qualifier = coop::naming::get_without(cpr.qualified_record_name, cpr.record_name.c_str());
 
@@ -501,14 +527,14 @@ int main(int argc, const char **argv) {
 					coop::src_mod::create_cold_struct_for(
 						&rec,
 						&cpr,
-						user_include_path_root,
+						user_include_path_root.c_str(),
 						hot_data_allocation_size_in_byte,
 						cold_data_allocation_size_in_byte
 					);
 					
 					//if the user did not give us an include path that we can copy the free_list template into 
 					//then just inject it into the code directly
-					if(!user_include_path_root){
+					if(user_include_path_root.empty()){
 						coop::src_mod::create_free_list_for(&cpr);
 					}
 
@@ -588,13 +614,13 @@ int main(int argc, const char **argv) {
 
 			//if the user gave us an entry point to his/her include path -> drop the free_list_template.hpp in it
 			//so it can be included by the relevant files
-			if(user_include_path_root && system_state != 1)
+			if(!user_include_path_root.empty() && system_state != 1)
 			{
 				//add the freelist implementation to the user's include structure
 				{
 					std::stringstream ss;
 					ss << "cp src_mod_templates/" << coop_free_list_template_file_name << " "
-						<< user_include_path_root << (user_include_path_root[strlen(user_include_path_root)-1] == '/' ? "" : "/") << coop_free_list_template_file_name;
+						<< user_include_path_root << (user_include_path_root[strlen(user_include_path_root.c_str())-1] == '/' ? "" : "/") << coop_free_list_template_file_name;
 					if(system(ss.str().c_str()) != 0){
 						coop::logger::out("[ERROR] can't touch user files for injecting #include code");
 					}

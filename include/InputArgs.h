@@ -7,9 +7,9 @@
 
 namespace coop{
     namespace input {
-        void register_parametered_action(const char *, const char *, std::function<void(const char*)>);
-        void register_parameterless_action(const char *, const char *, std::function<void(void)>);
-        int resolve_actions(int argc, const char **argv);
+        void resolve_config();
+        void register_parametered_config(const char *, std::function<void(std::vector<std::string>)>);
+        void register_parameterless_config(const char *, std::function<void(void)>);
     }
 }
 

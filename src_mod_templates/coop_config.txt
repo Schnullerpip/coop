@@ -1,0 +1,44 @@
+#uncomment a value to make it relevant
+
+
+#MANDATORY!!!
+#coop will place files in this include root
+#user-include-root insertPath
+
+
+
+
+#if this is set coop will not do any changes to the source files - only analyze
+analyze-only
+
+
+
+
+#this value determines the allocationsize, that is given any hot data freelist, that is created by coop
+#hot-size 1024
+
+
+
+#this value determines the allocationsize, that is given any cold data freelist, that is created by coop
+#cold-size 1024
+
+
+
+
+#this value can be set to modify the split tolerance - a record that is split will be split by its field weight.
+#a slightly weaker field could be split even though we want it to be considered hot.
+#the split tolerance is a factor that will lower the actual border for fields to be considered hot
+#split-tolerance 0.17
+
+
+
+
+#decides depth dependent weighting of members
+#depth-factor 10.0
+
+
+
+
+
+#if set coop will ask for permission on EACH record when trying to optimize it
+#confirm-record-changes

@@ -1,6 +1,9 @@
 #ifndef COOP_UTILS_HPP
 #define COOP_UTILS_HPP
 
+#define COOP_PATH_NAME_S "$COOP"
+#define COOP_TEMPLATES_PATH_NAME_S "$COOP_TEMPLATES"
+
 // Declares clang::SyntaxOnlyAction.
 #include"clang/Frontend/FrontendActions.h"
 #include"clang/Tooling/CommonOptionsParser.h"
