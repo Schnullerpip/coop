@@ -138,13 +138,20 @@ namespace coop{
         void create_cold_struct_for(
             coop::record::record_info *ri,
             cold_pod_representation *cpr,
-            const char * user_include_path,
+            std::string user_include_path,
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data)
         {
             const RecordDecl* rd = ri->record;
             std::stringstream ss;
-            std::ifstream ifs("src_mod_templates/cold_struct_template.cpp");
+            ss << getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "cold_struct_template.cpp";
+            std::ifstream ifs(ss.str());
+            if(!ifs.good())
+            {
+                coop::logger::log_stream << "could not open file: '" << ss.str() << "'";
+                coop::logger::err();
+            }
+            ss.str("");
             std::string tmpl_file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
@@ -152,9 +159,8 @@ namespace coop{
             //our modification will differ depending on wether the record is defined in a h/hpp or c/cpp file
             //so first determine what it is
             const char *ending = coop::naming::get_from_end_until(cpr->file_name.c_str(), '.');
-            if((strcmp(ending, "hpp") != 0) && (strcmp(ending, "h") != 0)){
-                cpr->is_header_file = false;
-            }
+
+            cpr->is_header_file = (strcmp(ending, "hpp") == 0) || (strcmp(ending, "h") == 0);
 
             //determine the generated struct's name
             ss << coop_cold_struct_s << rd->getNameAsString();
@@ -179,6 +185,11 @@ namespace coop{
             //determine the name of the data array that will hold space for the instances
             ss << cpr->record_name << "_cold_data";
             cpr->cold_data_container_name = ss.str();
+            ss.str("");
+
+            //determine the name of the data pointer, that will lead to the cold data
+            ss << coop_cold_data_pointer_name << "_" << cpr->record_name;
+            cpr->cold_data_ptr_name = ss.str();
             ss.str("");
 
             //assemble all the struct's cold fields
@@ -229,10 +240,10 @@ namespace coop{
             replaceAll(tmpl_file_content, RECORD_NAME, cpr->record_name);
             replaceAll(tmpl_file_content, RECORD_TYPE, cpr->rec_info->record->isStruct() ? "struct" : "class");
 
-            if(user_include_path){
-                replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
-            }else{
+            if(user_include_path.empty()){
                 replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
+            }else{
+                replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
             }
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
@@ -246,7 +257,13 @@ namespace coop{
             cold_pod_representation *cpr)
         {
             std::stringstream ss;
-            std::ifstream ifs("src_mod_templates/free_list_template.tmpl");
+            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "free_list_template.tmpl";
+            std::ifstream ifs(ss.str());
+            if(!ifs.good())
+            {
+                coop::logger::log_stream << "could not open file: " << ss.str();
+                coop::logger::err();
+            }
             std::string tmpl_file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
@@ -259,13 +276,15 @@ namespace coop{
 
         void add_cpr_ref_to( coop::src_mod::cold_pod_representation *cpr)
         {
-            std::ifstream ifs("src_mod_templates/intrusive_record_addition.cpp");
+            std::stringstream ss;
+            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "intrusive_record_addition.cpp";
+            std::ifstream ifs(ss.str());
             std::string file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
 
             replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
-            replaceAll(file_content, COLD_DATA_PTR_NAME, coop_cold_data_pointer_name);
+            replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
             replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
             replaceAll(file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
 
@@ -281,7 +300,10 @@ namespace coop{
             size_t allocation_size_cold_data)
         {
             return;
-            std::ifstream ifs("src_mod_templates/memory_allocation_template.cpp");
+            std::stringstream ss;
+            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "memory_allocation_template.cpp";
+            std::ifstream ifs(ss.str());
+            ss.str("");
             std::string file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
@@ -289,13 +311,12 @@ namespace coop{
             replaceAll(file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
             replaceAll(file_content, DATA_NAME, cpr->cold_data_container_name);
             replaceAll(file_content, RECORD_NAME, cpr->record_name);
-            if(cpr->user_include_path){
-                replaceAll(file_content, FREE_LIST_NAME, free_list_name_default);
-            }else{
+            if(cpr->user_include_path.empty()){
                 replaceAll(file_content, FREE_LIST_NAME, cpr->free_list_name);
+            }else{
+                replaceAll(file_content, FREE_LIST_NAME, free_list_name_default);
             }
             replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
-            std::stringstream ss;
             ss << allocation_size_cold_data;
             replaceAll(file_content, SIZE_COLD, ss.str());
             ss.str("");
@@ -331,6 +352,15 @@ namespace coop{
                 ReplaceText(mem_expr->getMemberLoc(), ss.str());
         }
 
+        //TODO DELETE THIS
+        void isNull(std::string n, const void *ptr){
+            if(!ptr)
+            {
+                coop::logger::log_stream << n << "IS NULL";
+                coop::logger::out();
+            }
+        }
+
         void handle_free_list_fragmentation(
             cold_pod_representation *cpr)
         {
@@ -341,12 +371,13 @@ namespace coop{
             //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
             std::stringstream free_stmt;
             free_stmt << "//marks the cold_data_freelist's cold_struct instance as reusable\n"
-               << "coop_cold_data_ptr->~"
+               << cpr->cold_data_ptr_name << "->~"
                << cpr->struct_name << "();\n"
                << cpr->free_list_instance_name_cold
-               << ".free(coop_cold_data_ptr);\n";
+               << ".free("<< cpr->cold_data_ptr_name <<");\n";
 
             if(dtor_decl){
+                coop::logger::out("found dtor_decl");
                 const Stmt *dtor_body = cpr->rec_info->destructor_ptr->getBody();
                 if(dtor_body && dtor_decl->isUserProvided()){
                     //insert the relevant code to the existing constructor
@@ -355,11 +386,25 @@ namespace coop{
                 }else{
                     //has no destructor body
                     const RecordDecl* record_decl = cpr->rec_info->record;
+                    //now we can't even be sure that the rewriter fits the ast - multiple definitions can exist, since there are multiple ASTs all containing the same headers
+                    rewriter = get_rewriter(record_decl->getASTContext());
+
+                    //make sure to only work with the global instances
+                    auto global_rec = coop::global<RecordDecl>::get_global(record_decl);
+                    if(!global_rec)
+                    {
+                        coop::logger::log_stream << "found no global node for: " << record_decl->getNameAsString();
+                        coop::logger::out();
+                        return;
+                    }
+                    record_decl = global_rec->ptr;
+
                     std::stringstream dtor_string;
                     dtor_string << "\n~" << record_decl->getNameAsString() << "()\n{\n" << free_stmt.str() << "}";
 
                     if(!record_decl->field_empty()){
                         rewriter->InsertTextBefore(record_decl->getLocEnd(), dtor_string.str());
+                        //rewriter->InsertTextAfter(cpr->rec_info->cold_fields[0]->getLocStart(), dtor_string.str());
                     }else{
                         //severe BUG this should/could never happen -> if a record has no fields we should have never found it to be hot/cold splittable
                         //if this occures shit is hitting fans, lots of em...
@@ -410,18 +455,20 @@ namespace coop{
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data)
         {
-            std::ifstream ifs("src_mod_templates/free_list_definition.cpp");
+            std::stringstream ss;
+            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "free_list_definition.cpp";
+            std::ifstream ifs(ss.str());
+            ss.str("");
             std::string file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
 
-            if(cpr->user_include_path){
-                replaceAll(file_content, FREE_LIST_NAME, free_list_name_default);
-            }else{
+            if(cpr->user_include_path.empty()){
                 replaceAll(file_content, FREE_LIST_NAME, cpr->free_list_name);
+            }else{
+                replaceAll(file_content, FREE_LIST_NAME, free_list_name_default);
             }
             replaceAll(file_content, RECORD_NAME, cpr->qualified_record_name);
-            std::stringstream ss;
             ss << cpr->qualifier << cpr->struct_name;
 
             replaceAll(file_content, STRUCT_NAME, ss.str().c_str());

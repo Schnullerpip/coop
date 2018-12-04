@@ -1,8 +1,8 @@
 #ifndef COOP_UTILS_HPP
 #define COOP_UTILS_HPP
 
-#define COOP_PATH_NAME_S "$COOP"
-#define COOP_TEMPLATES_PATH_NAME_S "$COOP_TEMPLATES"
+#define COOP_PATH_NAME_S "COOP"
+#define COOP_TEMPLATES_PATH_NAME_S "COOP_TEMPLATES"
 
 // Declares clang::SyntaxOnlyAction.
 #include"clang/Frontend/FrontendActions.h"
@@ -60,6 +60,9 @@ namespace coop{
     int get_sizeof_in_bits(const FieldDecl* field);
     //will return the sizeof value for a field in Byte
     int get_sizeof_in_byte(const FieldDecl* field);
+
+    //will return the value of an environmentvariable - or "" 
+    std::string getEnvVar( std::string const &);
 
     template <class T, typename P>
     struct data_matrix {

@@ -10,6 +10,12 @@ int coop::get_sizeof_in_byte(const FieldDecl* field){
     return get_sizeof_in_bits(field)/8;
 }
 
+std::string coop::getEnvVar( std::string const & key )
+{
+    char * val = getenv( key.c_str() );
+    return val == NULL ? std::string("") : std::string(val);
+}
+
 void coop::record::record_info::init(
     const clang::RecordDecl* class_struct,
     std::set<const clang::FieldDecl*> *field_vector,

@@ -532,14 +532,11 @@ int main(int argc, const char **argv) {
 				- find occurences of splitted classes heap instantiations
 				- find occurences of splitted classes deletions
 			*/
-			coop::logger::out("AHA00");
-			return 1;
 			std::vector<const FieldDecl*> cold_members;
 			for(int i = 0; i < num_records; ++i){
 				auto &recs_cold_fields = record_stats[i].cold_fields;
 				cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
 			}
-			coop::logger::out("AHA0");
 
 			MatchFinder finder;
 
@@ -564,7 +561,6 @@ int main(int argc, const char **argv) {
 						df);
 				}
 			}
-			coop::logger::out("AHA1");
 
 			//to find the relevant instantiations
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
@@ -583,29 +579,28 @@ int main(int argc, const char **argv) {
 			for(auto df : destructor_finders){
 				delete df;
 			}
-			coop::logger::out("AHA2");
 
 			//traverse all the records -> if they have cold fields -> split them in a cold_data struct
 			std::set<const char *> files_that_need_to_include_free_list;
 			std::set<std::string> files_that_need_to_be_included_in_main;
 			for(int i = 0; i < num_records; ++i){
-				coop::logger::out("on to another");
 				coop::record::record_info &rec = record_stats[i];
 
 				if(user_wants_to_confirm_each_record)
 				{
-					char input = 'n';
+					std::string input = "n";
 					coop::logger::log_stream << "now touching " << rec.record->getNameAsString().c_str() << ". Allow coop to apply changes (y)?";
 					coop::logger::out();
-					scanf(&input, "%c");
-					if(!(input == 'y' || input == 'Y'))
+					if(!getline(std::cin, input))
 					{
-						coop::logger::out("NO");
+						coop::logger::out("cant process input");
+					}
+					if(!(input == "y" || input == "Y"))
+					{
 						continue;
 					}
 				}
 
-				coop::logger::out("YES");
 				coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString().c_str() << Format::def;
 				coop::logger::out(coop::logger::RUNNING);
 				coop::logger::depth++;
@@ -620,7 +615,7 @@ int main(int argc, const char **argv) {
 					cpr.rec_info = &rec;
 					cpr.file_name = member_registration_callback.class_file_map[rec.record];
 					cpr.record_name = rec.record->getNameAsString();
-					cpr.user_include_path = user_include_path_root.c_str();
+					cpr.user_include_path = user_include_path_root;
 					cpr.qualified_record_name = rec.record->getQualifiedNameAsString();
 					cpr.qualifier = coop::naming::get_without(cpr.qualified_record_name, cpr.record_name.c_str());
 
@@ -629,7 +624,7 @@ int main(int argc, const char **argv) {
 					coop::src_mod::create_cold_struct_for(
 						&rec,
 						&cpr,
-						user_include_path_root.c_str(),
+						user_include_path_root,
 						hot_data_allocation_size_in_byte,
 						cold_data_allocation_size_in_byte
 					);
@@ -641,6 +636,7 @@ int main(int argc, const char **argv) {
 						coop::src_mod::create_free_list_for(&cpr);
 					}
 
+					//TODO this is not active....!
 					coop::logger::out("injecting memory allocations for the freelistinstances");
 					coop::src_mod::add_memory_allocation_to(
 						&cpr,
@@ -734,7 +730,7 @@ int main(int argc, const char **argv) {
 				//add the freelist implementation to the user's include structure
 				{
 					std::stringstream ss;
-					ss << "cp " << COOP_TEMPLATES_PATH_NAME_S << coop_free_list_template_file_name << " "
+					ss << "cp $" << COOP_TEMPLATES_PATH_NAME_S << "/" << coop_free_list_template_file_name << " "
 						<< user_include_path_root << (user_include_path_root[strlen(user_include_path_root.c_str())-1] == '/' ? "" : "/") << coop_free_list_template_file_name;
 					coop::logger::out(ss.str().c_str());
 					if(system(ss.str().c_str()) != 0){
@@ -785,6 +781,16 @@ void create_member_matrices( coop::record::record_info *record_stats)
 
 		const RecordDecl *rec = class_fields_map.first;
 		const auto fields = &class_fields_map.second;
+
+		//make sure to only work with the global instances
+		auto global_rec = coop::global<RecordDecl>::get_global(rec);
+		if(!global_rec)
+		{
+			//there is no global record!?...
+			coop::logger::out("found no global for a record, that cant be good... [Coop.cpp::create_member_matrices::~795]");
+			continue;
+		}
+		rec = global_rec->ptr;
 
 		coop::record::record_info &rec_ref = record_stats[rec_count];
 

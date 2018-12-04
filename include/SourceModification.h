@@ -23,7 +23,7 @@ namespace coop {
             bool is_header_file = true;
 
             //user include path
-            const char *user_include_path = nullptr;
+            std::string user_include_path = "";
 
             //name of the created struct
             std::string struct_name;
@@ -33,6 +33,7 @@ namespace coop {
 
             //name of the address for the allocated space of the created struct
             std::string cold_data_container_name;
+            std::string cold_data_ptr_name;
 
             //name of the union, that holds a strut_name[] and a char[] -> this way we can allocate memory
             //for struct_name on the stack even without struct_names fields having a standard constructor
@@ -63,7 +64,7 @@ namespace coop {
         void create_cold_struct_for(
             coop::record::record_info*,
             cold_pod_representation*,
-            const char * user_include_path,
+            std::string user_include_path,
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data
         );

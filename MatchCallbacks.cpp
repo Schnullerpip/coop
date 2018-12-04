@@ -466,6 +466,11 @@ void coop::FindInstantiations::run(const MatchFinder::MatchResult &result){
     const CXXNewExpr* new_expr = result.Nodes.getNodeAs<CXXNewExpr>(coop_new_instantiation_s);
     if(new_expr && !new_expr->isArray() && (new_expr->placement_arg_begin() == new_expr->placement_arg_end())){
         const RecordDecl *record = new_expr->getAllocatedType().getTypePtr()->getAsCXXRecordDecl();
+
+        //make sure only to work with the global instances
+        auto global_rec = coop::global<RecordDecl>::use(record);
+        record = global_rec->ptr;
+
         //get the new record Type's name
         std::string records_name(record->getNameAsString());
         //check if the instantiation of a new object is of relevant type
@@ -490,6 +495,11 @@ void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
 
     if(!delete_call->isArrayForm()){
         const RecordDecl *record_decl = deleted_instance_ref->getBestDynamicClassType();
+
+        //make sure only to work with the global instances
+        auto global_rec = coop::global<RecordDecl>::use(record_decl);
+        record_decl = global_rec->ptr;
+
         if(record_decl){
             if(std::find(record_deletions_to_find.begin(), record_deletions_to_find.end(), record_decl) != record_deletions_to_find.end()){
                 //we found a relevant deletion
