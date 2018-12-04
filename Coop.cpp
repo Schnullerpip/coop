@@ -79,6 +79,8 @@ int main(int argc, const char **argv) {
 		{
 			auto split_tolerance_action = [&hot_split_tolerance](std::vector<std::string> args){
 				hot_split_tolerance = atof(args[0].c_str());
+				coop::logger::log_stream << "[Config]::hot-split tolerance factor set to " << hot_split_tolerance;
+				coop::logger::out();
 			};
 			coop::input::register_parametered_config("split-tolerance", split_tolerance_action);
 		}
@@ -92,35 +94,60 @@ int main(int argc, const char **argv) {
 		std::vector<std::string> exclude_folders;
 		coop::input::register_parametered_config("exclude-folders", [&exclude_folders](std::vector<std::string> args){
 			exclude_folders = args;
+			coop::logger::out("[Config]::coop will exclude src files from the following directories :")++;
+			for(auto ex : exclude_folders)
+			{
+				coop::logger::out(ex.c_str());
+			}
+			coop::logger::depth--;
+		});
+
+		std::set<std::string> include_files;
+		coop::input::register_parametered_config("include-files", [&include_files](std::vector<std::string> args){
+			include_files.insert(args.begin(), args.end());
+			coop::logger::out("[Config]::following header files will explicitly be regarded:")++;
+			for(auto header : include_files)
+			{
+				coop::logger::out(header.c_str());
+				coop::match::add_file_as_match_condition(header.c_str());
+			}
+			coop::logger::depth--;
 		});
 
 		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size_i;
 		coop::input::register_parametered_config("hot-size", [&hot_data_allocation_size_in_byte](std::vector<std::string> args){
 			hot_data_allocation_size_in_byte = atoi(args[0].c_str());
+			coop::logger::log_stream << "[Config]::default hot data allocation size is set to: " << hot_data_allocation_size_in_byte;
+			coop::logger::out();
 		});
 
 		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size_i;
 		coop::input::register_parametered_config("cold-size", [&cold_data_allocation_size_in_byte](std::vector<std::string> args){
 			cold_data_allocation_size_in_byte = atoi(args[0].c_str());
+			coop::logger::log_stream << "[Config]::default cold data allocation size is set to: " << cold_data_allocation_size_in_byte;
+			coop::logger::out();
 		});
 
 		coop::input::register_parametered_config("depth-factor", [](std::vector<std::string> args){
 			field_weight_depth_factor_g = atof(args[0].c_str());
+			coop::logger::log_stream << "[Config]::default field weifht depth factor is set to: " << field_weight_depth_factor_g;
+			coop::logger::out();
 		});
 
 		std::string user_include_path_root = "";
 		coop::input::register_parametered_config("user-include-root", [&user_include_path_root](std::vector<std::string> args){
 			user_include_path_root = args[0];
-			coop::logger::log_stream << "[Config]::users include root: " << user_include_path_root;
+			coop::logger::log_stream << "[Config]::users include root: " << user_include_path_root << " (new files might be placed here)";
 			coop::logger::out();
 		});
 
 		bool user_wants_to_confirm_each_record = false;
 		coop::input::register_parameterless_config("confirm-record-changes", [&user_wants_to_confirm_each_record](){
 			user_wants_to_confirm_each_record = true;
+			coop::logger::out("[Config]::coop will ask for permission before each source transformation");
 		});
 
-	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING)++;
+	coop::logger::out("SYSTEM SETUP", coop::logger::RUNNING)++;
 
 		coop::input::resolve_config();
 
@@ -149,7 +176,10 @@ int main(int argc, const char **argv) {
 
 		//generate the clang tools
 		char cwd_buff[FILENAME_MAX];
-		getcwd(cwd_buff, FILENAME_MAX);
+		if(!getcwd(cwd_buff, FILENAME_MAX)){
+			coop::logger::log_stream << "could not get the current working directory path...";
+			coop::logger::err(coop::YES);
+		}
 		std::string cwd_string(cwd_buff), error_string("");
 		auto compilation_database = clang::tooling::CompilationDatabase::autoDetectFromDirectory(cwd_string, error_string);
 		if(!error_string.empty())
@@ -159,36 +189,43 @@ int main(int argc, const char **argv) {
 		}
 
 		//fill the user files with all files from the compilation database - if there is none, none is added -> this allows for duplicates!!!
-		if(user_files.empty())//if the user said which file/s to analyze, don't retrieve this information from a compilation database
-		for(auto file : compilation_database->getAllFiles())
-		{
-			bool is_supposed_to_be_excluded = false;
-			for(auto ex : exclude_folders)
+		if(user_files.empty()){//if the user said which file/s to analyze, don't retrieve this information from a compilation database
+			coop::logger::out("retreiving source files, that will be analyzed", coop::logger::RUNNING)++;
+			for(auto file : compilation_database->getAllFiles())
 			{
-				//if this file is located in one of the folders, that are supposed to be excluded - ignore it
-				std::stringstream path_to_find;
-				path_to_find << cwd_buff << "/" << ex;
-				size_t found_position = file.find(ex);
-				if(found_position != std::string::npos)
+				bool is_supposed_to_be_excluded = false;
+				for(auto ex : exclude_folders)
 				{
-					is_supposed_to_be_excluded = true;
-					break;
+					//if this file is located in one of the folders, that are supposed to be excluded - ignore it
+					std::stringstream path_to_find;
+					path_to_find << cwd_buff << "/" << ex;
+					size_t found_position = file.find(ex);
+					if(found_position != std::string::npos)
+					{
+						is_supposed_to_be_excluded = true;
+						break;
+					}
 				}
+				if(is_supposed_to_be_excluded)
+					continue;
+				user_files.push_back(file);
+				coop::match::add_file_as_match_condition(file.c_str());
 			}
-			if(is_supposed_to_be_excluded)
-				continue;
-			coop::logger::out(file.c_str());
-			user_files.push_back(file);
-			coop::match::add_file_as_match_condition(file.c_str());
+
+			//print the files
+			for(auto file : user_files)
+			{
+				coop::logger::out(file.c_str());
+			}
+			coop::logger::depth--;
+			coop::logger::out("retreiving source files, that will be analyzed", coop::logger::DONE);
 		}
 
 		//CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
 		ClangTool Tool(*compilation_database, user_files);
 
 		//with the user files defined as a match regex we can now initialize the matchers
-		std::string file_match_string = coop::match::get_file_regex_match_condition((user_include_path_root.empty() ? nullptr : user_include_path_root.c_str()));
-		//TODO delete this line
-		//file_match_string = "(src/collision_detection.cpp|src/input_management.cpp|src/main.cpp|src/particle.cpp|src/setup.cpp|src/Shader.cpp|include/(particle.h|camera.h|collision_detection.h|debug_line.h|input_management.h|main.h|observer.h|setup.h|shader.h|texture.h))";
+		std::string file_match_string = coop::match::get_file_regex_match_condition(((!include_files.empty() || user_include_path_root.empty()) ? nullptr : user_include_path_root.c_str()));
 
 		//{
 		//	std::stringstream reg;
@@ -251,7 +288,7 @@ int main(int argc, const char **argv) {
 		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
 
 	coop::logger::depth--;
-	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::DONE);
+	coop::logger::out("SYSTEM SETUP", coop::logger::DONE);
 
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
 
@@ -267,13 +304,16 @@ int main(int argc, const char **argv) {
 			coop::logger::depth--;
 		}
 
-		//auto front_end_action = newFrontendActionFactory(&data_aggregation).get();
-		//Tool.run(front_end_action);
-
 		//print out the found records (classes/structs) and their fields
+		coop::logger::out("Found Records:")++;
 		member_registration_callback.printData();
+
+		coop::logger::depth--;
 		coop::logger::depth--;
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::DONE);
+
+
+
 
 
 	//if there are no records or no records were found just stop..
@@ -283,6 +323,11 @@ int main(int argc, const char **argv) {
 		if(user_include_path_root.empty())
 		{
 			coop::logger::log_stream << "There is no 'user-include-root' set in coop's local config file! This might very well be the issue!";
+			coop::logger::out();
+		}
+		if(user_files.empty())
+		{
+			coop::logger::log_stream << "There are no user files - you need to either provide the source files as command line arguments, or have a compile_commands.json file at the root directory";
 			coop::logger::out();
 		}
 		coop::logger::out("System exit");
@@ -385,7 +430,7 @@ int main(int argc, const char **argv) {
 		for(int i = 0; i < num_records; ++i){
 			coop::record::record_info &rec = record_stats[i];
 
-			coop::logger::log_stream << "Record " << rec.record->getNameAsString().c_str();
+			coop::logger::log_stream << Format::bold_on << "Record " << Format::bold_off << Format::blue << rec.record->getNameAsString().c_str() << Format::def;
 			coop::logger::out()++;
 
 				float average = 0;
@@ -487,11 +532,14 @@ int main(int argc, const char **argv) {
 				- find occurences of splitted classes heap instantiations
 				- find occurences of splitted classes deletions
 			*/
+			coop::logger::out("AHA00");
+			return 1;
 			std::vector<const FieldDecl*> cold_members;
 			for(int i = 0; i < num_records; ++i){
 				auto &recs_cold_fields = record_stats[i].cold_fields;
 				cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
 			}
+			coop::logger::out("AHA0");
 
 			MatchFinder finder;
 
@@ -516,6 +564,7 @@ int main(int argc, const char **argv) {
 						df);
 				}
 			}
+			coop::logger::out("AHA1");
 
 			//to find the relevant instantiations
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
@@ -534,28 +583,33 @@ int main(int argc, const char **argv) {
 			for(auto df : destructor_finders){
 				delete df;
 			}
+			coop::logger::out("AHA2");
 
 			//traverse all the records -> if they have cold fields -> split them in a cold_data struct
 			std::set<const char *> files_that_need_to_include_free_list;
 			std::set<std::string> files_that_need_to_be_included_in_main;
 			for(int i = 0; i < num_records; ++i){
+				coop::logger::out("on to another");
 				coop::record::record_info &rec = record_stats[i];
 
 				if(user_wants_to_confirm_each_record)
 				{
-					std::string input = "n";
+					char input = 'n';
 					coop::logger::log_stream << "now touching " << rec.record->getNameAsString().c_str() << ". Allow coop to apply changes (y)?";
 					coop::logger::out();
-					if(!std::getline(std::cin, input))
+					scanf(&input, "%c");
+					if(!(input == 'y' || input == 'Y'))
 					{
-						coop::logger::log_stream << "could not process user input";
-						coop::logger::err(coop::YES);
-					}
-					if(!(input == "y" || input == "Y"))
-					{
+						coop::logger::out("NO");
 						continue;
 					}
 				}
+
+				coop::logger::out("YES");
+				coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString().c_str() << Format::def;
+				coop::logger::out(coop::logger::RUNNING);
+				coop::logger::depth++;
+
 
 				//this check indicates wether or not the record has cold fields
 				if(!rec.cold_fields.empty()){
@@ -571,6 +625,7 @@ int main(int argc, const char **argv) {
 					cpr.qualifier = coop::naming::get_without(cpr.qualified_record_name, cpr.record_name.c_str());
 
 					//create a struct that holds all the field-declarations for the cold fields
+					coop::logger::out("injecting cold struct definitions");
 					coop::src_mod::create_cold_struct_for(
 						&rec,
 						&cpr,
@@ -582,15 +637,18 @@ int main(int argc, const char **argv) {
 					//if the user did not give us an include path that we can copy the free_list template into 
 					//then just inject it into the code directly
 					if(user_include_path_root.empty()){
+						coop::logger::out("injecting freelist code");
 						coop::src_mod::create_free_list_for(&cpr);
 					}
 
+					coop::logger::out("injecting memory allocations for the freelistinstances");
 					coop::src_mod::add_memory_allocation_to(
 						&cpr,
 						hot_data_allocation_size_in_byte,
 						cold_data_allocation_size_in_byte
 					);
 
+					coop::logger::out("extracting cold fields");
 					//get rid of all the cold field-declarations in the records
 					// AND
 					//change all appearances of the cold data fields to be referenced by the record's instance
@@ -606,13 +664,16 @@ int main(int argc, const char **argv) {
 					}
 
 					//give the record a reference to an instance of this new cold_data_struct
+					coop::logger::out("adding freelist pointr to class definition");
 					coop::src_mod::add_cpr_ref_to(&cpr);
 					
 					//modify/create the record's destructor, to handle free-list fragmentation
+					coop::logger::out("modifying/creating destructor");
 					coop::src_mod::handle_free_list_fragmentation(&cpr);
 
 					//if this record is instantiated on the heap by using new anywhere, we
-					//should make sure, that the single instances are NOT distributed in memory but rather be allocated wit spatial locality
+					//should make sure, that the single instances are NOT distributed in memory but rather be allocated with spatial locality
+					coop::logger::out("changing 'new' usage");
 					{
 						auto iter = coop::FindInstantiations::instantiations_map.find(rec.record);
 						if(iter != coop::FindInstantiations::instantiations_map.end()){
@@ -627,6 +688,7 @@ int main(int argc, const char **argv) {
 					//accordingly there should be calls to the delete operator (hopefully)
 					//if so we also need to modify those code bits, to make sure the free list wont fragment
 					//so whenever an element is deleted -> tell the freelist to make space for new data
+					coop::logger::out("changing 'delete' usage");
 					{
 						auto iter  = coop::FindDeleteCalls::delete_calls_map.find(rec.record);
 						if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
@@ -640,6 +702,7 @@ int main(int argc, const char **argv) {
 					//since we made a split in this record - we need to define the freelist instances coming with it for each TU
 					//if the record was defined in a cpp file - there is no need for that tho
 					if(cpr.is_header_file){
+						coop::logger::out("defining free list instances");
 						coop::src_mod::define_free_list_instances(
 							&cpr,
 							coop::FunctionRegistrationCallback::main_function_ptr,
@@ -652,9 +715,14 @@ int main(int argc, const char **argv) {
 					files_that_need_to_include_free_list.insert(member_registration_callback.class_file_map[rec.record].c_str());
 					//if the splitted record was defined in a header the freelist instances will be made extern to be eventually defined
 					//in the main file -> accordingly the main file needs to include the file that defined the record in the first place
-					if(cpr.is_header_file)
+					if(cpr.is_header_file){
 						files_that_need_to_be_included_in_main.insert(cpr.file_name);
+					}
 				}
+
+				coop::logger::depth--;
+				coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString() << Format::def;
+				coop::logger::out(coop::logger::DONE);
 			}
 			//writes from the rewriter buffers into the actual files
 			coop::src_mod::apply_changes();
@@ -666,8 +734,9 @@ int main(int argc, const char **argv) {
 				//add the freelist implementation to the user's include structure
 				{
 					std::stringstream ss;
-					ss << "cp src_mod_templates/" << coop_free_list_template_file_name << " "
+					ss << "cp " << COOP_TEMPLATES_PATH_NAME_S << coop_free_list_template_file_name << " "
 						<< user_include_path_root << (user_include_path_root[strlen(user_include_path_root.c_str())-1] == '/' ? "" : "/") << coop_free_list_template_file_name;
+					coop::logger::out(ss.str().c_str());
 					if(system(ss.str().c_str()) != 0){
 						coop::logger::out("[ERROR] can't touch user files for injecting #include code");
 					}

@@ -185,13 +185,24 @@ namespace coop{
                 logger::out();
                 for(auto t : *mat->relevant_instances){
                     logger::log_stream << "[";
+                    bool has_an_entry = false;
                     for(size_t o = 0; o < fields.size(); ++o){
                         float value_at = mat->at(o, getIdx(t.first));
-                        value_at == 0 ? logger::log_stream << " " : logger::log_stream << value_at;
+                        if(value_at == 0)
+                        {
+                            logger::log_stream << " ";
+                        }else{
+                            logger::log_stream << value_at;
+                            has_an_entry = true;
+                        }
                         logger::log_stream << "\t";
                         if(o == fields.size()-1){
-                            logger::log_stream << "] " << getName(t.first);
-                            logger::out();
+                            if(has_an_entry){
+                                logger::log_stream << "] " << getName(t.first);
+                                logger::out();
+                            }else{
+                                coop::logger::clear();
+                            }
                         }else{
                             logger::log_stream << ",";
                         }

@@ -1,6 +1,3 @@
-//linux libraries
-#include<unistd.h>
-#include<stdio.h>
 //custom includes
 #include"MatchCallbacks.hpp"
 #include"SourceModification.h"
@@ -54,13 +51,12 @@ void coop::match::add_file_as_match_condition(const char * file_name){
     file_regex << file_name;
     ++file_inputs;
 }
+
 std::string coop::match::get_file_regex_match_condition(const char * path_addition){
     std::stringstream return_string;
     return_string << "(" << file_regex.str();
     if(path_addition){
-        char cwd_buff[FILENAME_MAX];
-        getcwd(cwd_buff, FILENAME_MAX);
-        return_string << "|" << cwd_buff << "/" << path_addition << (path_addition[strlen(path_addition)] == '/' ? "" : "/") << "*";
+        return_string << "|" << path_addition << (path_addition[strlen(path_addition)] == '/' ? "" : "/") << "*";
     }
     return_string  << ")";
     return return_string.str();

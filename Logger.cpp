@@ -1,5 +1,14 @@
 #include "Logger.hpp"
 
+Format::Modifier Format::def(Format::FG_DEFAULT);
+Format::Modifier Format::red(Format::FG_RED);
+Format::Modifier Format::green(Format::FG_GREEN);
+Format::Modifier Format::blue(Format::FG_BLUE);
+
+Format::Modifier Format::bold_on(Format::BOLD_ON);
+Format::Modifier Format::bold_off(Format::BOLD_OFF);
+Format::Modifier Format::underline_on(Format::UNDERLINE_ON);
+Format::Modifier Format::underline_off(Format::UNDERLINE_OFF);
 
 namespace coop{
     namespace logger {
