@@ -1,3 +1,7 @@
+//linux libraries
+#include<unistd.h>
+#include<stdio.h>
+//custom includes
 #include"MatchCallbacks.hpp"
 #include"SourceModification.h"
 #include"data.hpp"
@@ -54,7 +58,9 @@ std::string coop::match::get_file_regex_match_condition(const char * path_additi
     std::stringstream return_string;
     return_string << "(" << file_regex.str();
     if(path_addition){
-         return_string << "|" << path_addition << (path_addition[strlen(path_addition)] == '/' ? "" : "/") << "*";
+        char cwd_buff[FILENAME_MAX];
+        getcwd(cwd_buff, FILENAME_MAX);
+        return_string << "|" << cwd_buff << "/" << path_addition << (path_addition[strlen(path_addition)] == '/' ? "" : "/") << "*";
     }
     return_string  << ")";
     return return_string.str();
@@ -99,17 +105,17 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
 
     std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str();
 
-    coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
-    coop::logger::out();
+    //coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
+    //coop::logger::out();
 
     class_file_map[rd] = fileName;
 
     if(!rd->field_empty()){
         for(auto f : rd->fields()){
-            coop::logger::log_stream << "found '" << f->getNameAsString()
-                << "'(" << coop::get_sizeof_in_bits(f) << " bits) in record '"
-                << rd->getNameAsString() << "'";
-            coop::logger::out();
+            //coop::logger::log_stream << "found '" << f->getNameAsString()
+            //    << "'(" << coop::get_sizeof_in_bits(f) << " bits) in record '"
+            //    << rd->getNameAsString() << "'";
+            //coop::logger::out();
 
             class_fields_map[rd].insert(coop::global<FieldDecl>::use(f)->ptr);
         }
@@ -124,8 +130,8 @@ void coop::FunctionPrototypeRegistrationCallback::run(const MatchFinder::MatchRe
     //make sure to match only those prototypes, that we can find a definition for
     if(!func){return;}
 
-    coop::logger::log_stream << "found function prototype: " << proto->getNameAsString();
-    coop::logger::out();
+    //coop::logger::log_stream << "found function prototype: " << proto->getNameAsString();
+    //coop::logger::out();
 
     static coop::unique ids;
     std::string id = coop::naming::get_decl_id<FunctionDecl>(proto);
@@ -137,8 +143,8 @@ void coop::FunctionPrototypeRegistrationCallback::run(const MatchFinder::MatchRe
     //we store the prototypes id with the definitions pointer
     //this way in other TUs that will only be able to find the prototype, they will be able
     //to associate the definition
-    coop::logger::log_stream << "associating '" << coop::naming::get_decl_id<FunctionDecl>(proto) << "' with: '" << func << "' instead of '" << proto << "'";
-    coop::logger::out();
+    //coop::logger::log_stream << "associating '" << coop::naming::get_decl_id<FunctionDecl>(proto) << "' with: '" << func << "' instead of '" << proto << "'";
+    //coop::logger::out();
 
     //make sure to overwrite an existing global ptr_id for this prototype (could have been found and registered by other callbacks before)
     auto global_f = coop::global<FunctionDecl>::get_global(id);
@@ -157,8 +163,8 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
     const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
     if(!func->isThisDeclarationADefinition()){
         //this is probably just a function header - dont mind it, since this is nothing we want to change
-        coop::logger::log_stream << "ignored function header: " << coop::naming::get_decl_id<FunctionDecl>(func);
-        coop::logger::out();
+        //coop::logger::log_stream << "ignored function header: " << coop::naming::get_decl_id<FunctionDecl>(func);
+        //coop::logger::out();
         return;
     }
     auto global_func = coop::global<FunctionDecl>::use(func);
@@ -177,16 +183,16 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
         coop::global<MemberExpr>::set_global(memExpr, id, result.Context);
     }
 
-    coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << "' " << global_func->id << " using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
-    coop::logger::out();
+    //coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << "' " << global_func->id << " using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
+    //coop::logger::out();
 
     if(!coop::FunctionRegistrationCallback::main_function_ptr && func->isMain())
     {
         FunctionRegistrationCallback::main_function_ptr = func;
         FunctionRegistrationCallback::main_file = result.SourceManager->getFilename(main_function_ptr->getLocStart());
 
-        coop::logger::log_stream << "found main function '" << global_func->id << "' ";
-        coop::logger::out();
+        //coop::logger::log_stream << "found main function '" << global_func->id << "' ";
+        //coop::logger::out();
     }
 
 
@@ -276,9 +282,6 @@ void coop::ParentedFunctionCallback::run(const MatchFinder::MatchResult &result)
         }else{ parent_node = AST_abbreviation::loop_nodes[loop]; }
     }
 
-    coop::logger::log_stream << "[DEBUG]::-> found func call for " << child_node->ID() << " parented by " << parent_node->ID();
-    coop::logger::out();
-
     parent_node->insert_child(child_node);
 }
 
@@ -360,63 +363,10 @@ void coop::ParentedLoopCallback::run(const MatchFinder::MatchResult &result){
         }else{ parent_node = AST_abbreviation::loop_nodes[loop]; }
     }
 
-    coop::logger::log_stream << "[DEBUG]::-> found loop " << child_node->ID() << " parented by " << parent_node->ID();
-    coop::logger::out();
 
     parent_node->insert_child(child_node);
 }
 
-
-/*LoopFunctionsCallback*/
-void coop::LoopFunctionsCallback::printData(){
-    for(auto lc : loop_function_calls){
-        coop::logger::log_stream << "loop " << lc.second.identifier.c_str();
-        coop::logger::out()++;
-        coop::logger::log_stream << "[";
-        for(auto f : lc.second.funcs){
-            coop::logger::log_stream << f->getNameAsString() << ", ";
-        }
-        coop::logger::log_stream << "]";
-        coop::logger::out()--;
-    }
-}
-
-void coop::LoopFunctionsCallback::run(const MatchFinder::MatchResult &result){
-
-    auto global_func = coop::global<FunctionDecl>::use(result.Nodes.getNodeAs<CallExpr>(coop_function_call_s)->getDirectCallee());
-    const FunctionDecl *function_call = global_func->ptr;
-
-    coop::logger::log_stream << "found function '" << function_call->getNameAsString() << "' being called in a " ;
-
-    const Stmt *loop;
-    bool isForLoop = true;
-    std::string loop_name;
-    if(const ForStmt* for_loop = result.Nodes.getNodeAs<ForStmt>(coop_loop_s)){
-        loop = for_loop;
-        loop_name = coop::naming::get_for_loop_identifier(for_loop, result.SourceManager);
-        coop::logger::log_stream << "for";
-    }else if(const WhileStmt* while_loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
-        loop = while_loop;
-        loop_name = coop::naming::get_while_loop_identifier(while_loop, result.SourceManager);
-        isForLoop = false;
-        coop::logger::log_stream << "while";
-    }
-
-    coop::logger::log_stream << "Loop " << loop_name;
-    coop::logger::out();
-
-    //make sure we're handling the global versions
-    loop = coop::global<Stmt>::use(loop, loop_name, result.Context)->ptr;
-    function_call = coop::global<FunctionDecl>::use(function_call)->ptr;
-    
-    loop_function_calls[loop].identifier = loop_name;
-    loop_function_calls[loop].isForLoop = isForLoop;
-    loop_function_calls[loop].funcs.push_back(function_call);
-
-    /*since here we find really each functionCall made inside a loop (not only the relevant ones), we dont want to directly register this loop.
-    after the matchers have run over the AST we will aggregate additional data and then filter these loops with information we do not have right now
-    remember -> during AST traversal we can never expect the momentary information to be complete*/
-}
 
 /*LoopMemberUsageCallback*/
 bool coop::LoopMemberUsageCallback::isIndexed(const clang::Stmt* loop){
@@ -458,15 +408,15 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
         SourceManager &srcMgr = result.Context->getSourceManager();
         loop_stmt = loop;
         loop_name = coop::naming::get_for_loop_identifier(loop, &srcMgr);
-        coop::logger::log_stream << "found 'for loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
-        coop::logger::out();
+        //coop::logger::log_stream << "found 'for loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+        //coop::logger::out();
     }else if(const WhileStmt* loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
         loop_stmt = loop;
         isForLoop = false;
         loop_name = coop::naming::get_while_loop_identifier(loop, &srcMgr);
-        coop::logger::log_stream << "found 'while loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
-        coop::logger::out();
+        //coop::logger::log_stream << "found 'while loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
+        //coop::logger::out();
     }
 
     //make sure to only use the global versions / the unique access points to the nodes

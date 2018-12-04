@@ -5,6 +5,10 @@
 #include<stdlib.h>
 #include<math.h>
 #include<algorithm>
+#include<regex>
+//linux libraries
+#include<unistd.h>
+#include<stdio.h>
 //custom includes
 #include"coop_utils.hpp"
 #include"SystemStateInformation.hpp"
@@ -53,10 +57,6 @@ void recursive_loop_memberusage_aggregation(
 	const Stmt* parent,
 	const Stmt* child);
 
-void register_indirect_memberusage_in_loop_functioncalls(
-	coop::LoopFunctionsCallback &loop_functions_callback,
-	coop::FunctionRegistrationCallback &member_usage_callback
-);
 void create_member_matrices(
 	coop::record::record_info *record_stats
 );
@@ -88,6 +88,11 @@ int main(int argc, const char **argv) {
 			apply_changes_to_source_files = false;
 			coop::logger::out("[Config]::coop will not apply any sorce transformations");
 			});
+		
+		std::vector<std::string> exclude_folders;
+		coop::input::register_parametered_config("exclude-folders", [&exclude_folders](std::vector<std::string> args){
+			exclude_folders = args;
+		});
 
 		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size_i;
 		coop::input::register_parametered_config("hot-size", [&hot_data_allocation_size_in_byte](std::vector<std::string> args){
@@ -111,7 +116,9 @@ int main(int argc, const char **argv) {
 		});
 
 		bool user_wants_to_confirm_each_record = false;
-		coop::input::register_parameterless_config("confirm-record-changes", [&user_wants_to_confirm_each_record](){user_wants_to_confirm_each_record = true;});
+		coop::input::register_parameterless_config("confirm-record-changes", [&user_wants_to_confirm_each_record](){
+			user_wants_to_confirm_each_record = true;
+		});
 
 	coop::logger::out("-----------SYSTEM SETUP-----------", coop::logger::RUNNING)++;
 
@@ -125,11 +132,12 @@ int main(int argc, const char **argv) {
 				<< "cache lvl: " << l1.lvl
 				<< " size: " << l1.size
 				<< "KB; lineSize: " << l1.line_size << "B";
-			coop::logger::out()--;
+
+		coop::logger::out()--;
 		coop::logger::out("retreiving system information", coop::logger::DONE);
 
 		//registering all the user specified files
-		std::vector<const char*> user_files;
+		std::vector<std::string> user_files;
 		for(int i = 1; i < argc; ++i){
 			if(strcmp(argv[i], "--") == 0)
 				break;
@@ -139,8 +147,55 @@ int main(int argc, const char **argv) {
 			coop::match::add_file_as_match_condition(argv[i]);
 		}
 
+		//generate the clang tools
+		char cwd_buff[FILENAME_MAX];
+		getcwd(cwd_buff, FILENAME_MAX);
+		std::string cwd_string(cwd_buff), error_string("");
+		auto compilation_database = clang::tooling::CompilationDatabase::autoDetectFromDirectory(cwd_string, error_string);
+		if(!error_string.empty())
+		{
+			coop::logger::log_stream << error_string;
+			coop::logger::err(coop::YES);
+		}
+
+		//fill the user files with all files from the compilation database - if there is none, none is added -> this allows for duplicates!!!
+		if(user_files.empty())//if the user said which file/s to analyze, don't retrieve this information from a compilation database
+		for(auto file : compilation_database->getAllFiles())
+		{
+			bool is_supposed_to_be_excluded = false;
+			for(auto ex : exclude_folders)
+			{
+				//if this file is located in one of the folders, that are supposed to be excluded - ignore it
+				std::stringstream path_to_find;
+				path_to_find << cwd_buff << "/" << ex;
+				size_t found_position = file.find(ex);
+				if(found_position != std::string::npos)
+				{
+					is_supposed_to_be_excluded = true;
+					break;
+				}
+			}
+			if(is_supposed_to_be_excluded)
+				continue;
+			coop::logger::out(file.c_str());
+			user_files.push_back(file);
+			coop::match::add_file_as_match_condition(file.c_str());
+		}
+
+		//CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
+		ClangTool Tool(*compilation_database, user_files);
+
 		//with the user files defined as a match regex we can now initialize the matchers
 		std::string file_match_string = coop::match::get_file_regex_match_condition((user_include_path_root.empty() ? nullptr : user_include_path_root.c_str()));
+		//TODO delete this line
+		//file_match_string = "(src/collision_detection.cpp|src/input_management.cpp|src/main.cpp|src/particle.cpp|src/setup.cpp|src/Shader.cpp|include/(particle.h|camera.h|collision_detection.h|debug_line.h|input_management.h|main.h|observer.h|setup.h|shader.h|texture.h))";
+
+		//{
+		//	std::stringstream reg;
+		//	reg << cwd_string << "/";
+		//	file_match_string = std::regex_replace(file_match_string, std::regex(reg.str()), "");
+		//}
+
 		coop::logger::log_stream << "file_match: '" << file_match_string << "'";
 		coop::logger::out();
 		auto file_match = isExpansionInFileMatching(file_match_string);
@@ -166,26 +221,21 @@ int main(int argc, const char **argv) {
             eachOf(forStmt(file_match, has_loop_ancestor).bind(coop_child_for_loop_s),
                   whileStmt(file_match, has_loop_ancestor).bind(coop_child_while_loop_s));
 
-        StatementMatcher members_used_in_for_loops =
-            memberExpr(hasAncestor(forStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
-        StatementMatcher members_used_in_while_loops =
-            memberExpr(hasAncestor(whileStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
+        StatementMatcher members_used_in_for_loops = memberExpr(hasAncestor(forStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
+        StatementMatcher members_used_in_while_loops = memberExpr(hasAncestor(whileStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
 
         StatementMatcher delete_calls =
             cxxDeleteExpr(file_match, hasDescendant(declRefExpr().bind(coop_class_s))).bind(coop_deletion_s);
 
 
-		CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
-		ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
 
-		coop::MemberRegistrationCallback member_registration_callback(&user_files);
+		coop::MemberRegistrationCallback			member_registration_callback;
 		coop::FunctionPrototypeRegistrationCallback prototype_registration_callback;
-		coop::FunctionRegistrationCallback member_usage_callback(&user_files);
-		coop::LoopFunctionsCallback loop_functions_callback(&user_files);
-		coop::LoopMemberUsageCallback for_loop_member_usages_callback(&user_files);
-		coop::LoopMemberUsageCallback while_loop_member_usages_callback(&user_files);
-		coop::ParentedFunctionCallback parented_function_callback;
-		coop::ParentedLoopCallback parented_loop_callback;
+		coop::FunctionRegistrationCallback			member_usage_callback;
+		coop::LoopMemberUsageCallback				for_loop_member_usages_callback;
+		coop::LoopMemberUsageCallback				while_loop_member_usages_callback;
+		coop::ParentedFunctionCallback				parented_function_callback;
+		coop::ParentedLoopCallback					parented_loop_callback;
 
 		MatchFinder data_aggregation;
 		data_aggregation.addMatcher(classes, &member_registration_callback);
@@ -197,7 +247,6 @@ int main(int argc, const char **argv) {
 		data_aggregation.addMatcher(ll_child_parent, &parented_loop_callback);
 		data_aggregation.addMatcher(lf_child_parent, &parented_loop_callback);
 
-		data_aggregation.addMatcher(function_calls_in_loops, &loop_functions_callback);
 		data_aggregation.addMatcher(members_used_in_for_loops, &for_loop_member_usages_callback);
 		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
 
@@ -225,7 +274,6 @@ int main(int argc, const char **argv) {
 		member_registration_callback.printData();
 		coop::logger::depth--;
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::DONE);
-
 
 
 	//if there are no records or no records were found just stop..
@@ -261,7 +309,6 @@ int main(int argc, const char **argv) {
 		we need to recursively search for higher instances of calls -> e.g. loop A is relevant -> search for EACH function as well as EACH loop associating it -> we find function B
 		Since B is now relevant search for EACH function/loop associating it etc. Recursion needs to be considered and ideally somehow remembered as a priority weighing factor since recursion will act loop-like
 		*/
-		//TODO nest completeness
 
 		coop::logger::out("ptr_IDs - functions")++;
 		for(auto &pi : coop::global<FunctionDecl>::ptr_id)
@@ -477,7 +524,7 @@ int main(int argc, const char **argv) {
 			for(unsigned i = 0; i < ASTs.size(); ++i){
 				MatchFinder find_cold_member_usages;
 				ASTContext &ast_context = ASTs[i]->getASTContext();
-				coop::ColdFieldCallback cold_field_callback(&user_files, &cold_members, &ast_context);
+				coop::ColdFieldCallback cold_field_callback(&cold_members, &ast_context);
 				find_cold_member_usages.addMatcher(memberExpr().bind(coop_member_s), &cold_field_callback);
 
 				find_cold_member_usages.matchAST(ast_context);
@@ -660,42 +707,6 @@ int main(int argc, const char **argv) {
 }
 
 
-void register_indirect_memberusage_in_loop_functioncalls(
-	coop::LoopFunctionsCallback &loop_functions_callback,
-	coop::FunctionRegistrationCallback &member_usage_callback)
-{
-	std::map<const Stmt*, coop::loop_credentials> purified_map; 
-	//loop_functions_callback now carries ALL the loops, that call functions, even if those functions dont associate members
-	//get rid of those entries 
-	for(auto &fc : loop_functions_callback.loop_function_calls){
-		bool remove = true;
-		//for each function in that loop, check wether it is a relevant function
-		for(auto f : fc.second.funcs){
-			auto iter = member_usage_callback.relevant_functions.find(coop::global<FunctionDecl>::get_global(f)->ptr);
-			if(iter != member_usage_callback.relevant_functions.end()){
-				//this function is relevant to us and therefore validates the loop to be relevant
-				remove = false;
-				break;
-			}
-		}
-		if(!remove){
-			//put it in the new map, that the callback will receive
-			purified_map[fc.first] = fc.second;
-			//since this loop is relevant to us - check wether it is registered yet
-			//if it doesnt directly associate members it wont be registered yet
-			auto iter = coop::LoopMemberUsageCallback::loops.find(fc.first);
-			if(iter == coop::LoopMemberUsageCallback::loops.end()){
-				//the relevant loop is NOT registered yet -> register it, by adding it to the list
-				coop::LoopMemberUsageCallback::loops.insert(std::pair<const Stmt*, coop::loop_credentials>(fc.first, fc.second));
-				//coop::LoopMemberUsageCallback::loops[fc.first].identifier = "TODO";
-				coop::LoopMemberUsageCallback::indexLoop(fc.first);
-			}
-		}
-	}
-
-	loop_functions_callback.loop_function_calls = purified_map;
-}
-
 
 void create_member_matrices( coop::record::record_info *record_stats)
 {
@@ -826,7 +837,7 @@ void create_member_matrices( coop::record::record_info *record_stats)
 			rec_ref.print_loop_mem_mat(coop::LoopMemberUsageCallback::loops, coop::LoopMemberUsageCallback::loop_idx_mapping);
 
 		coop::logger::depth--;
-		coop::logger::out("weighting nested loops", coop::logger::TODO);
+		coop::logger::out("weighting nested loops", coop::logger::DONE);
 		rec_count++;
 	}
 }
@@ -843,37 +854,43 @@ void fill_function_member_matrix(
 
 		int func_idx = coop::FunctionRegistrationCallback::function_idx_mapping[func];
 
-		std::map<const NamedDecl*, std::set<const ValueDecl*>> uniques;
+		std::map<std::string, std::set<const ValueDecl*>> uniques;
 
 		//iterate over each memberexpression that function uses
 		for(auto mem : *mems){
 
+			//only work with the global instances
+			const FieldDecl *field_ptr = static_cast<const FieldDecl*>(mem->getMemberDecl());
+			auto global_field_ptr = coop::global<FieldDecl>::get_global(field_ptr);
+			if(!global_field_ptr){
+				continue;
+			}
+			field_ptr = global_field_ptr->ptr;
+
 			//get the referenced decl if there is any and check if we already have it registered
 			auto decRefExp = dyn_cast_or_null<DeclRefExpr>(*mem->child_begin());
-			if(decRefExp)
+			std::string decRefID = "this";
+
 			{
-				const NamedDecl *named_decl = decRefExp->getFoundDecl();
-				auto &value_decls = uniques[named_decl];
+				//if we can find a decRefExpr for this memExpr, retrieve its unique identifier - else it is the this pointer
+				if(decRefExp)
+				{
+					decRefID = coop::naming::get_decl_id<NamedDecl>(decRefExp->getFoundDecl());
+				}
+				auto &value_decls = uniques[decRefID];
 				if(value_decls.find(mem->getMemberDecl()) != value_decls.end()){
 					//already registered this one - do nothing
-					continue;;
+					continue;
 				}
 				value_decls.insert(mem->getMemberDecl());
 			}
 
-			const FieldDecl *child = static_cast<const FieldDecl*>(mem->getMemberDecl());
-			auto global_child = coop::global<FieldDecl>::get_global(child);
-			if(!global_child){
-				continue;
-			}
-			child = global_child->ptr;
-
 			coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
 				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
-			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
+			if(std::find(fields->begin(), fields->end(), field_ptr)!=fields->end() && field_ptr->getParent() == rec_ref.record){
 				coop::logger::log_stream << "' - yes";
-				rec_ref.fun_mem.at(rec_ref.field_idx_mapping[child], func_idx)++;
+				rec_ref.fun_mem.at(rec_ref.field_idx_mapping[field_ptr], func_idx)++;
 			}else{
 				coop::logger::log_stream << "' - no";
 			}
@@ -888,25 +905,37 @@ void fill_loop_member_matrix(
 {
 	auto &loop_mems_map = coop::LoopMemberUsageCallback::loops;
 	auto &loop_idxs = coop::LoopMemberUsageCallback::loop_idx_mapping;
+
 	for(auto loop_mems : loop_mems_map){
 		auto loop = loop_mems.first;
 		auto loop_info = &coop::LoopMemberUsageCallback::loops[loop];
 		int loop_idx = loop_idxs[loop];
 
-		std::map<const NamedDecl*, std::set<const ValueDecl*>> uniques;
+		std::map<std::string, std::set<const ValueDecl*>> uniques;
 
 		//iterate over each member that loop uses
-		for(auto mem : loop_mems.second.member_usages){
-
-			//get the referenced decl if there is any and check if we already have it registered
-			auto decRefExp = dyn_cast_or_null<DeclRefExpr>(*mem->child_begin());
-			if(decRefExp)
+		for(auto mem : loop_info->member_usages){
+			//only work with global instances -> also if there is no global this is probably a methodcall not a field usage
+			auto global_field = coop::global<FieldDecl>::get_global(coop::naming::get_decl_id<ValueDecl>(mem->getMemberDecl()));
+			if(!global_field)
 			{
-				const NamedDecl *named_decl = decRefExp->getFoundDecl();
-				auto &value_decls = uniques[named_decl];
+				continue;
+			}
+			const FieldDecl* field_ptr = global_field->ptr;
+
+			clang::DeclRefExpr const *decRefExp = dyn_cast_or_null<DeclRefExpr>(*mem->child_begin());
+			std::string decRefID = "this";
+
+
+			{
+				//if we can find a decRefExpr for this memExpr, retrieve its unique identifier - else it is the this pointer
+				if(decRefExp) {
+					decRefID = coop::naming::get_decl_id<NamedDecl>(decRefExp->getFoundDecl());
+				}
+				auto &value_decls = uniques[decRefID];
 				if(value_decls.find(mem->getMemberDecl()) != value_decls.end()){
-					//already registered this one - do nothing
-					continue;;
+					//already registered this member usage for this instance - do nothing
+					continue;
 				}
 				value_decls.insert(mem->getMemberDecl());
 			}
@@ -914,10 +943,9 @@ void fill_loop_member_matrix(
 			coop::logger::log_stream << "checking loop " << loop_info->identifier << " has member '"
 				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
-			const FieldDecl* child = coop::global<FieldDecl>::get_global(coop::naming::get_decl_id<ValueDecl>(mem->getMemberDecl()))->ptr;
-			if(std::find(fields->begin(), fields->end(), child)!=fields->end() && child->getParent() == rec_ref.record){
+			if(std::find(fields->begin(), fields->end(), field_ptr)!=fields->end() && field_ptr->getParent() == rec_ref.record){
 				coop::logger::log_stream << "' - yes";
-				rec_ref.loop_mem.at(rec_ref.field_idx_mapping[child], loop_idx)++;
+				rec_ref.loop_mem.at(rec_ref.field_idx_mapping[field_ptr], loop_idx)++;
 			}else{
 				coop::logger::log_stream << "' - no";
 			}

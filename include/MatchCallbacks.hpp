@@ -13,15 +13,12 @@ namespace coop {
 
     class CoopMatchCallback : public MatchFinder::MatchCallback {
         public:
-            CoopMatchCallback(const std::vector<const char*> *user_source_files)
-                :user_source_files(user_source_files){}
         protected:
             const char * get_relevant_token(const char *file_path);
 
             void get_for_loop_identifier(const ForStmt* loop, SourceManager *srcMgr, std::stringstream*);
             void get_while_loop_identifier(const WhileStmt* loop, SourceManager *srcMgr, std::stringstream*);
         private:
-            const std::vector<const char*> *user_source_files;
             virtual void run(const MatchFinder::MatchResult &result) = 0;
     };
 
@@ -31,8 +28,6 @@ namespace coop {
     public:
         static std::map<const RecordDecl*, std::set<const FieldDecl*>> class_fields_map;
         static std::map<const RecordDecl*, std::string> class_file_map;
-
-        MemberRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
         void printData();
 
@@ -59,8 +54,6 @@ namespace coop {
     */
     class FunctionRegistrationCallback : public coop::CoopMatchCallback{
     public:
-
-        FunctionRegistrationCallback(const std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
 
         static bool isIndexed(const FunctionDecl *f);
         static void indexFunction(const FunctionDecl *f);
@@ -99,19 +92,6 @@ namespace coop {
 
 
     /*
-        will match on all function calls, that are made inside a loop, so they can later be checked
-        against wether or not they use members and therefore those members' datalayout should be optimized
-    */
-    class LoopFunctionsCallback : public coop::CoopMatchCallback {
-    public:
-        std::map<const Stmt*, coop::loop_credentials> loop_function_calls;
-        LoopFunctionsCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
-        void printData();
-    private:
-        void run(const MatchFinder::MatchResult &result);
-    };
-
-    /*
         Will cache all members used in loops and the loops respectively, so they can later be used
         to deduce a heuristic considering member usage
     */
@@ -128,8 +108,6 @@ namespace coop {
         static bool isIndexed(const clang::Stmt* loop);
         static void indexLoop(const clang::Stmt* loop);
         static void registerLoop(const clang::Stmt* loop, std::string loop_name ,bool isForLoop);
-
-        LoopMemberUsageCallback(std::vector<const char*> *user_files):CoopMatchCallback(user_files){}
    private:
         void run(const MatchFinder::MatchResult &result);
    };
@@ -146,10 +124,8 @@ namespace coop {
             cold_field_occurances;
         
         explicit ColdFieldCallback(
-            std::vector<const char*> *user_files,
             std::vector<const clang::FieldDecl*> *fields_to_find,
-            ASTContext *ast_c):
-                CoopMatchCallback(user_files)
+            ASTContext *ast_c)
             {
                 this->fields_to_find = fields_to_find;
                 this->ast_context_ptr = ast_c;
