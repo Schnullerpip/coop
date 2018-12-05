@@ -69,6 +69,18 @@ void fill_loop_member_matrix(
 	std::set<const FieldDecl*> *fields
 );
 
+//TODO DEBUG DELETE THIS
+template<typename T>
+std::string get_text(T* t, ASTContext *ast_context){
+    SourceManager &src_man = ast_context->getSourceManager();
+
+    clang::SourceLocation b(t->getLocStart()), _e(t->getLocEnd());
+    clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context->getLangOpts()));
+
+    return std::string(src_man.getCharacterData(b),
+        src_man.getCharacterData(e)-src_man.getCharacterData(b));
+}
+
 float field_weight_depth_factor_g = coop_field_weight_depth_factor_f;
 
 //main start
@@ -147,7 +159,9 @@ int main(int argc, const char **argv) {
 			coop::logger::out("[Config]::coop will ask for permission before each source transformation");
 		});
 
-	coop::logger::out("SYSTEM SETUP", coop::logger::RUNNING)++;
+	coop::logger::log_stream << Format::bold_on << "SYSTEM SETUP" << Format::bold_off;
+	coop::logger::out(coop::logger::RUNNING);
+	coop::logger::depth++;
 
 		coop::input::resolve_config();
 
@@ -227,14 +241,7 @@ int main(int argc, const char **argv) {
 		//with the user files defined as a match regex we can now initialize the matchers
 		std::string file_match_string = coop::match::get_file_regex_match_condition(((!include_files.empty() || user_include_path_root.empty()) ? nullptr : user_include_path_root.c_str()));
 
-		//{
-		//	std::stringstream reg;
-		//	reg << cwd_string << "/";
-		//	file_match_string = std::regex_replace(file_match_string, std::regex(reg.str()), "");
-		//}
-
-		coop::logger::log_stream << "file_match: '" << file_match_string << "'";
-		coop::logger::out();
+		//create a matcher that filters only the user files - so we dont end up making changes in system headers
 		auto file_match = isExpansionInFileMatching(file_match_string);
 
         DeclarationMatcher classes = cxxRecordDecl(file_match, hasDefinition(), unless(isUnion())).bind(coop_class_s);
@@ -288,7 +295,8 @@ int main(int argc, const char **argv) {
 		data_aggregation.addMatcher(members_used_in_while_loops, &while_loop_member_usages_callback);
 
 	coop::logger::depth--;
-	coop::logger::out("SYSTEM SETUP", coop::logger::DONE);
+	coop::logger::log_stream << Format::bold_on << "SYSTEM SETUP" << Format::bold_off;
+	coop::logger::out(coop::logger::DONE);
 
 	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
 
@@ -565,12 +573,27 @@ int main(int argc, const char **argv) {
 			//to find the relevant instantiations
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
 
+			//generate a regex matcher, that is able to find member usages (excluding those faulty registrations of records...)
+			std::stringstream member_finder_regex;
+			member_finder_regex << "(" << cold_members[0]->getNameAsString() << "|";
+			if(cold_members.size() > 1){
+				for(size_t i = 1;i < cold_members.size(); ++i)
+				{
+					member_finder_regex << cold_members[i]->getNameAsString();
+					if(i < (cold_members.size()-1))
+						member_finder_regex << "|";
+				}
+			}
+			member_finder_regex << ")";
+
+			auto name_matcher = matchesName(member_finder_regex.str());
+
 			//apply the matchers to all the ASTs
 			for(unsigned i = 0; i < ASTs.size(); ++i){
 				MatchFinder find_cold_member_usages;
 				ASTContext &ast_context = ASTs[i]->getASTContext();
 				coop::ColdFieldCallback cold_field_callback(&cold_members, &ast_context);
-				find_cold_member_usages.addMatcher(memberExpr().bind(coop_member_s), &cold_field_callback);
+				find_cold_member_usages.addMatcher(expr(ignoringImplicit(memberExpr(file_match, member(name_matcher)).bind(coop_member_s))), &cold_field_callback);
 
 				find_cold_member_usages.matchAST(ast_context);
 				finder.matchAST(ast_context);
@@ -636,13 +659,13 @@ int main(int argc, const char **argv) {
 						coop::src_mod::create_free_list_for(&cpr);
 					}
 
-					//TODO this is not active....!
-					coop::logger::out("injecting memory allocations for the freelistinstances");
-					coop::src_mod::add_memory_allocation_to(
-						&cpr,
-						hot_data_allocation_size_in_byte,
-						cold_data_allocation_size_in_byte
-					);
+					////TODO this is not active....!
+					//coop::logger::out("injecting memory allocations for the freelistinstances");
+					//coop::src_mod::add_memory_allocation_to(
+					//	&cpr,
+					//	hot_data_allocation_size_in_byte,
+					//	cold_data_allocation_size_in_byte
+					//);
 
 					coop::logger::out("extracting cold fields");
 					//get rid of all the cold field-declarations in the records
@@ -654,6 +677,7 @@ int main(int argc, const char **argv) {
 						for(auto field_usage : field_usages){
 							coop::src_mod::redirect_memExpr_to_cold_struct(
 								field_usage.mem_expr_ptr,
+								field,
 								&cpr,
 								field_usage.ast_context_ptr);
 						}

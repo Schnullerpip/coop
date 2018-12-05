@@ -423,17 +423,45 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
     loops[loop_stmt].member_usages.push_back(member);
 }
 
+//TODO DEBUG DELETE THIS
+template<typename T>
+std::string get_text(T* t, ASTContext *ast_context){
+    SourceManager &src_man = ast_context->getSourceManager();
+
+    clang::SourceLocation b(t->getLocStart()), _e(t->getLocEnd());
+    clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context->getLangOpts()));
+
+    return std::string(src_man.getCharacterData(b),
+        src_man.getCharacterData(e)-src_man.getCharacterData(b));
+}
 
 void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
 {
     const MemberExpr *mem_expr = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
+
     if(mem_expr){
         //make sure to search for the global version of this field
         if(auto global_field = coop::global<FieldDecl>::get_global(static_cast<const FieldDecl*>(mem_expr->getMemberDecl()))){
+
+            //This is a 'bug' related hack/workaround, since this matcher will include record-declarations implicitly!!!
+            //https://bugs.llvm.org/show_bug.cgi?id=39522
+            std::string mem_expr_text = get_text(mem_expr, result.Context);
+            const char *relevant_token_dot = coop::naming::get_from_end_until(mem_expr_text.c_str(), '.'); //so foo.a will yield a
+            const char *relevant_token_paren = coop::naming::get_from_end_until(mem_expr_text.c_str(), '>'); //so foo->a will yield a
+
             const FieldDecl *field_decl = global_field->ptr;
             //check if the found member_expr matches a cold field
             auto iter = std::find(fields_to_find->begin(), fields_to_find->end(), field_decl);
             if(iter != fields_to_find->end()){
+
+                //the workaround/hack is to get the actual text of the mem_expr which in case of those implicit record nodes will be the records name
+                //we will compate the memExpr's actual text with what it claims to be
+                int c1 = strcmp(relevant_token_dot, mem_expr->getMemberDecl()->getNameAsString().c_str()) , c2 = strcmp(relevant_token_paren, mem_expr->getMemberDecl()->getNameAsString().c_str());
+                bool match = (c1 == 0) || (c2 == 0);
+
+                if(!match)
+                    return;
+
                 //we have found an occurence of a cold field! map it
                 //prevent redundant registration due to multiple includes of the same h/hpp file and make sure to only use the global version of this
                 static coop::unique mem_ids;
@@ -442,9 +470,7 @@ void coop::ColdFieldCallback::run(const MatchFinder::MatchResult &result)
                     return;
                 }
 
-                coop::ColdFieldCallback::cold_field_occurances[field_decl].push_back({
-                    coop::global<MemberExpr>::use(mem_expr, mem_expr_id, result.Context)->ptr, //registers the mem_expr
-                    ast_context_ptr});
+                coop::ColdFieldCallback::cold_field_occurances[field_decl].push_back({ mem_expr, result.Context});
             }
         }
     }

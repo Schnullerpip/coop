@@ -85,6 +85,7 @@ namespace coop {
 
         void redirect_memExpr_to_cold_struct(
             const MemberExpr *mem_expr,
+            const FieldDecl *field,
             cold_pod_representation *cpr,
             ASTContext *ast_context
         );

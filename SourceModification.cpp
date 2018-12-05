@@ -332,16 +332,14 @@ namespace coop{
 
         void redirect_memExpr_to_cold_struct(
             const MemberExpr *mem_expr,
+            const FieldDecl *field,
             cold_pod_representation *cpr,
             ASTContext *ast_context)
         {
-            std::string usage_text = get_text(mem_expr, ast_context);
-
             std::string field_decl_name = mem_expr->getMemberDecl()->getNameAsString();
 
             std::stringstream ss;
             ss << coop_safe_struct_acces_method_name << "->" << field_decl_name;
-
 
             //usage_text.replace(
             //    usage_text.find(field_decl_name),
