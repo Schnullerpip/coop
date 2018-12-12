@@ -155,6 +155,30 @@ namespace coop {
         void run(const MatchFinder::MatchResult &result);
     };
 
+
+    /*will register all constructors for the records_to_find*/
+    class FindConstructor : public MatchFinder::MatchCallback {
+    public:
+        static std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>> rec_constructor_map;
+        static std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>> rec_copy_constructor_map;
+        static std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>> rec_move_constructor_map;
+        void add_record(const RecordDecl* r);
+    private:
+        std::vector<const RecordDecl*> records_to_find;
+        void run(const MatchFinder::MatchResult &result);
+    };
+
+    /*will find copy assignment operators*/
+    class FindCopyAssignmentOperators : public MatchFinder::MatchCallback
+    {
+    public:
+        static std::map<const RecordDecl*, const CXXMethodDecl*> rec_copy_assignment_operator_map;
+        void add_record(const RecordDecl* r);
+    private:
+        std::vector<const RecordDecl*> records_to_find;
+        void run(const MatchFinder::MatchResult &result);
+    };
+
     /*will register new calls */
     class FindInstantiations : public MatchFinder::MatchCallback {
     public:

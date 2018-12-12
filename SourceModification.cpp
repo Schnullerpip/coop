@@ -2,6 +2,7 @@
 #include"clang/AST/DeclCXX.h"
 #include"coop_utils.hpp"
 #include"data.hpp"
+#include"MatchCallbacks.hpp"
 #include<fstream>
 
 #define STRUCT_NAME "STRUCT_NAME"
@@ -25,6 +26,7 @@
 #define RECORD_NAME "RECORD_NAME"
 #define RECORD_TYPE "RECORD_TYPE"
 #define FIELD_INITIALIZERS "FIELD_INITIALIZERS"
+#define SEMANTIC "SEMANTIC"
 
 namespace {
     template<typename T>
@@ -41,11 +43,18 @@ namespace {
 
 
     void replaceAll(std::string &data,const std::string &to_replace,const std::string &replace_with){
-        size_t pos = data.find(to_replace);
-        while(pos != std::string::npos){
-            data.replace(pos, to_replace.size(), replace_with);
-            pos = data.find(to_replace, pos + to_replace.size());
+        size_t pos = 0;;
+        while((pos = data.find(to_replace, pos)) != std::string::npos){
+            data.replace(pos, to_replace.length(), replace_with);
+            pos += replace_with.length();
         }
+    }
+
+    std::string get_src_mod_file_name(std::string file_name)
+    {
+        std::stringstream ss;
+        ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << file_name;
+        return ss.str();
     }
 }
 
@@ -359,8 +368,87 @@ namespace coop{
             }
         }
 
-        void handle_free_list_fragmentation(
-            cold_pod_representation *cpr)
+        void handle_constructors(cold_pod_representation *cpr)
+        {
+            //create the strings that handle stuff
+            auto record_decl = coop::global<RecordDecl>::get_global(cpr->rec_info->record)->ptr;
+
+            //create the code for general constructors
+            std::ifstream ifs(get_src_mod_file_name("constructor_deep_copy_emulation.cpp"));
+            std::string constructor_code(
+                (std::istreambuf_iterator<char>(ifs)),
+                (std::istreambuf_iterator<char>()));
+            replaceAll(constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+            replaceAll(constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+            replaceAll(constructor_code, STRUCT_NAME, cpr->struct_name);
+
+            //create the code for copy constructors
+            /*if the copy ctor is implicit, then we must now make sure, that not the cold_data_ptr is copied (implicitly)
+            but rather ALL fields cold and hot - so we emulate a deep copy and temporary copies of objects don't trigger
+            the cold data instances to be destructed*/
+            auto copy_ctor = coop::FindConstructor::rec_copy_constructor_map.find(record_decl);
+            if(copy_ctor == coop::FindConstructor::rec_copy_constructor_map.end())
+            {
+                //there is no definition of a copy constructor - so we make one
+                ifs = std::ifstream (get_src_mod_file_name("copy_constructor_deep_copy_emulation.cpp"));
+                std::string copy_constructor_code(
+                    (std::istreambuf_iterator<char>(ifs)),
+                    (std::istreambuf_iterator<char>()));
+                replaceAll(copy_constructor_code, RECORD_NAME, cpr->record_name);
+                replaceAll(copy_constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+                replaceAll(copy_constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+                replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
+                //generate code to copy EACH field
+                auto fields = cpr->rec_info->fields;
+                auto cold_fields = cpr->rec_info->cold_fields;
+                std::stringstream semantic;
+                for(auto field : fields)
+                {
+                    auto type = field->getType();
+
+                    if(type.isConstQualified() || type.isLocalConstQualified() || dyn_cast_or_null<ConstantArrayType>(type.getTypePtr()))
+                    {
+                        continue;
+                    }
+
+                    bool is_cold = std::find(cold_fields.begin(), cold_fields.end(), field) != cold_fields.end();
+                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                    semantic << field->getNameAsString() << " = other_obj.";
+                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                    semantic << field->getNameAsString() << ";\n";
+                }
+                replaceAll(copy_constructor_code, SEMANTIC, semantic.str());
+                cpr->missing_mandatory << copy_constructor_code;
+            }
+
+            //create the code for move constructors
+
+            //check whether or not the record has the respective methods 
+            //if so inject the code where it belongs
+            //else wrap the code to be injected as methods and mark it as missing_mandatory so it is injected later on
+
+            //constructor
+            auto ctors = coop::FindConstructor::rec_constructor_map[record_decl];
+            if(ctors.empty())
+            {
+                //there is no ctor -> create one
+                coop::logger::out("no constructors found");
+                cpr->missing_mandatory << "\n" << cpr->record_name << "(){" << constructor_code << "}\n";
+            }else{
+                for(auto ctor : ctors)
+                {
+                    //inject the code to the existing ctor
+                    //get the ctors location
+                    coop::logger::out("changing a constructor");
+                    auto r = get_rewriter(ctor->getASTContext());
+                    r->InsertTextAfterToken(ctor->getBody()->getLocStart(), constructor_code);
+                }
+            }
+            //copy constructor
+            //move constructor
+        }
+
+        void handle_free_list_fragmentation(cold_pod_representation *cpr)
         {
             const CXXDestructorDecl *dtor_decl = cpr->rec_info->destructor_ptr;
 
@@ -372,7 +460,7 @@ namespace coop{
                << cpr->cold_data_ptr_name << "->~"
                << cpr->struct_name << "();\n"
                << cpr->free_list_instance_name_cold
-               << ".free("<< cpr->cold_data_ptr_name <<");\n";
+               << ".free("<< cpr->cold_data_ptr_name <<");";
 
             if(dtor_decl){
                 coop::logger::out("found dtor_decl");
@@ -397,17 +485,9 @@ namespace coop{
                     }
                     record_decl = global_rec->ptr;
 
-                    std::stringstream dtor_string;
-                    dtor_string << "\n~" << record_decl->getNameAsString() << "()\n{\n" << free_stmt.str() << "}";
-
-                    if(!record_decl->field_empty()){
-                        rewriter->InsertTextBefore(record_decl->getLocEnd(), dtor_string.str());
-                        //rewriter->InsertTextAfter(cpr->rec_info->cold_fields[0]->getLocStart(), dtor_string.str());
-                    }else{
-                        //severe BUG this should/could never happen -> if a record has no fields we should have never found it to be hot/cold splittable
-                        //if this occures shit is hitting fans, lots of em...
-                        coop::logger::out("severe BUG considered fieldless record for a hot/cold split... this should NEVER happen...");
-                    }
+                    //since there is no existing definition of a destructor - we make one
+                    //missing_mandatory will be added in conclusion
+                    cpr->missing_mandatory << "\n~" << record_decl->getNameAsString() << "()\n{\n" << free_stmt.str() << "\n}\n";
                 }
             }
         }
@@ -486,6 +566,15 @@ namespace coop{
 
             get_rewriter(main_function_node->getASTContext())->
                 InsertTextBefore(main_function_node->getLocStart(), file_content);
+        }
+
+
+        void handle_missing_mandatory(cold_pod_representation *cpr)
+        {
+            auto rec = cpr->rec_info->record;
+            auto &ast_ctxt = rec->getASTContext();
+            auto r = get_rewriter(ast_ctxt);
+            r->InsertTextBefore(rec->getLocEnd(), cpr->missing_mandatory.str());
         }
     }
 }

@@ -53,6 +53,8 @@ using namespace clang::ast_matchers;
 #define coop_new_instantiation_s "new_usage"
 #define coop_deletion_s "delete"
 
+#define coop_constructor_s "constructor"
+
 
 namespace coop{
 

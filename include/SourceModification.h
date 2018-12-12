@@ -45,6 +45,9 @@ namespace coop {
                         free_list_instance_name_hot;
 
             coop::record::record_info *rec_info = nullptr;
+
+            //this stringstream will collect all mandatory commands that will be added to a record, if the record doesn't have the respective methods (ctor/dtor...)
+            std::stringstream missing_mandatory;
         };
 
         void include_file(
@@ -90,6 +93,10 @@ namespace coop {
             ASTContext *ast_context
         );
 
+        void handle_constructors(
+            cold_pod_representation *cpr
+        );
+
         void handle_free_list_fragmentation(
             cold_pod_representation *cpr
         );
@@ -108,6 +115,12 @@ namespace coop {
             const FunctionDecl *main_function_node,
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data
+        );
+
+        //to prevent duplicate location overwrites,  changes that have no valid entry point are stored in cpr->missing_mandatory
+        //they can all be injected into the record at once
+        void handle_missing_mandatory(
+            cold_pod_representation *cpr
         );
     }
 }

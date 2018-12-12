@@ -41,6 +41,16 @@ std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*
 std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>>
     coop::FindDeleteCalls::delete_calls_map = {};
 
+std::map<const RecordDecl*, const CXXMethodDecl*>
+    coop::FindCopyAssignmentOperators::rec_copy_assignment_operator_map;
+
+std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
+    coop::FindConstructor::rec_constructor_map;
+std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
+    coop::FindConstructor::rec_copy_constructor_map;
+std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
+    coop::FindConstructor::rec_move_constructor_map;
+
 //function implementations
 std::stringstream file_regex;
 size_t file_inputs = 0;
@@ -90,10 +100,15 @@ void coop::MemberRegistrationCallback::printData(){
 void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &result){
     const RecordDecl *rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
     std::string rd_id = coop::naming::get_decl_id<RecordDecl>(rd);
-    const ptr_ID<RecordDecl> * global = coop::global<RecordDecl>::get_global(rd_id);
+    ptr_ID<RecordDecl> * global = coop::global<RecordDecl>::get_global(rd_id);
 
     if(global){
         //we already found this record declaration - do nothing
+        if(rd->hasBody() && !global->ptr->hasBody())
+        {
+            global->ptr = rd;
+            global->ast_context = result.Context;
+        }
         return;
     }else{
         coop::global<RecordDecl>::set_global(rd, rd_id);
@@ -530,6 +545,104 @@ void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
             if(std::find(record_deletions_to_find.begin(), record_deletions_to_find.end(), record_decl) != record_deletions_to_find.end()){
                 //we found a relevant deletion
                 coop::FindDeleteCalls::delete_calls_map[record_decl].push_back({delete_call, result.Context});
+            }
+        }
+    }
+}
+
+/*FindConstructor*/
+void coop::FindConstructor::add_record(const RecordDecl *rd)
+{
+    records_to_find.push_back(rd);
+}
+void coop::FindConstructor::run(const MatchFinder::MatchResult &result){
+
+    const CXXConstructorDecl *constructor = result.Nodes.getNodeAs<CXXConstructorDecl>(coop_constructor_s);
+
+    {
+        while(constructor->isDelegatingConstructor())
+        {
+            constructor = constructor->getTargetConstructor();
+        }
+    }
+
+    //after delegation resolving or just through other ASTs make sure not to work with redundant data
+    coop::unique uniques;
+    if(uniques.check(constructor->getNameAsString()))
+    {
+        return;
+    }
+    
+
+    const RecordDecl *record_decl = constructor->getParent();
+    if(record_decl){
+
+        //make sure to only use global instances 
+        auto global_rec = coop::global<RecordDecl>::use(record_decl);
+        record_decl = global_rec->ptr;
+
+        //coop::logger::log_stream << "found constructor for " << record_decl->getNameAsString() << "\n" << get_text(constructor, result.Context);
+        //coop::logger::out();
+
+        //register copy constructors
+        auto iter = rec_copy_constructor_map.find(record_decl);
+        if(constructor->isCopyConstructor() && (iter == rec_copy_constructor_map.end()))
+        {
+            auto &consts = rec_copy_constructor_map[record_decl];
+            consts.push_back(constructor);
+            return;
+        }
+        
+        //register move constructors
+        iter = rec_move_constructor_map.find(record_decl);
+        if(constructor->isMoveConstructor() && (iter == rec_move_constructor_map.end()))
+        {
+            auto &consts = rec_move_constructor_map[record_decl];
+            consts.push_back(constructor);
+            return;
+        }
+
+        //register other constructors
+        iter = rec_constructor_map.find(record_decl);
+        if(iter == rec_constructor_map.end())
+        {
+            auto &consts = rec_constructor_map[record_decl];
+            consts.push_back(constructor);
+            return;
+        }
+    }
+}
+/*FindCopyAssignmentOperators*/
+void coop::FindCopyAssignmentOperators::add_record(const RecordDecl *rd)
+{
+    records_to_find.push_back(rd);
+}
+void coop::FindCopyAssignmentOperators::run(const MatchFinder::MatchResult &result){
+
+    const CXXMethodDecl *copy_assignment_operator = result.Nodes.getNodeAs<CXXMethodDecl>(coop_function_s);
+
+    if(copy_assignment_operator->isCopyAssignmentOperator()){
+        const RecordDecl *record_decl = copy_assignment_operator->getParent();
+        if(record_decl){
+
+            //make sure to only use global instances 
+            auto global_rec = coop::global<RecordDecl>::use(record_decl);
+            record_decl = global_rec->ptr;
+
+            //coop::logger::log_stream << "found constructor for " << record_decl->getNameAsString() << "\n" << get_text(constructor, result.Context);
+            //coop::logger::out();
+
+            auto iter = rec_copy_assignment_operator_map.find(record_decl);
+            if(iter == rec_copy_assignment_operator_map.end())
+            {
+                rec_copy_assignment_operator_map[record_decl] = copy_assignment_operator;
+                return;
+            }
+            iter = rec_copy_assignment_operator_map.find(record_decl);
+            if(iter == rec_copy_assignment_operator_map.end())
+            {
+                rec_copy_assignment_operator_map[record_decl] = copy_assignment_operator;
+                return;
             }
         }
     }

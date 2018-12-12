@@ -539,6 +539,7 @@ int main(int argc, const char **argv) {
 				- find the relevant record's destructors
 				- find occurences of splitted classes heap instantiations
 				- find occurences of splitted classes deletions
+				- find splitted classes' constructors/copy constructors/copyAssignmentOperators
 			*/
 			std::vector<const FieldDecl*> cold_members;
 			for(int i = 0; i < num_records; ++i){
@@ -549,6 +550,8 @@ int main(int argc, const char **argv) {
 			MatchFinder finder;
 
 			std::vector<coop::FindDestructor*> destructor_finders;
+			coop::FindConstructor constructor_finder;
+			coop::FindCopyAssignmentOperators copy_assignment_finder;
 			coop::FindInstantiations instantiation_finder;
 			coop::FindDeleteCalls deletion_finder;
 
@@ -559,6 +562,8 @@ int main(int argc, const char **argv) {
 				if(!rec.cold_fields.empty()){ //only consider splitted classes
 					instantiation_finder.add_record(rec.record);
 					deletion_finder.add_record(rec.record);
+					constructor_finder.add_record(rec.record);
+					copy_assignment_finder.add_record(rec.record);
 
 					coop::FindDestructor *df = new coop::FindDestructor(rec);
 					destructor_finders.push_back(df);
@@ -572,6 +577,8 @@ int main(int argc, const char **argv) {
 
 			//to find the relevant instantiations
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
+			finder.addMatcher(cxxConstructorDecl(file_match, unless(isImplicit())).bind(coop_constructor_s), &constructor_finder);
+			finder.addMatcher(cxxMethodDecl(file_match, isCopyAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &copy_assignment_finder);
 
 			//generate a regex matcher, that is able to find member usages (excluding those faulty registrations of records...)
 			std::stringstream member_finder_regex;
@@ -686,6 +693,10 @@ int main(int argc, const char **argv) {
 					//give the record a reference to an instance of this new cold_data_struct
 					coop::logger::out("adding freelist pointr to class definition");
 					coop::src_mod::add_cpr_ref_to(&cpr);
+
+					//modify/create the record's constructors
+					coop::logger::out("modifying/creating constructors");
+					coop::src_mod::handle_constructors(&cpr);
 					
 					//modify/create the record's destructor, to handle free-list fragmentation
 					coop::logger::out("modifying/creating destructor");
@@ -730,6 +741,12 @@ int main(int argc, const char **argv) {
 							cold_data_allocation_size_in_byte
 						);
 					}
+
+
+					//throughout the transformations we might have found no entry point for an important change
+					//to prevent duplicate location overwrites those changes are stored in cpr->missing_mandatory
+					//now they can all be injected into the record at once
+					coop::src_mod::handle_missing_mandatory(&cpr);
 
 					//mark the record's translation unit as one, that needs to include the free_list_template implementation
 					files_that_need_to_include_free_list.insert(member_registration_callback.class_file_map[rec.record].c_str());
