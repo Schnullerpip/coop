@@ -618,7 +618,8 @@ int main(int argc, const char **argv) {
 				find_cold_member_usages.matchAST(ast_context);
 				finder.matchAST(ast_context);
 			}
-			coop::logger::out("Second data aggregation - finding cold field usages relevant ctors/dtors/operators", coop::logger::DONE)--;
+			coop::logger::depth--;
+			coop::logger::out("Second data aggregation - finding cold field usages relevant ctors/dtors/operators", coop::logger::DONE);
 			//destroy the destructor finders
 			for(auto df : destructor_finders){
 				delete df;
