@@ -368,6 +368,53 @@ namespace coop{
             }
         }
 
+        void handle_operators(cold_pod_representation *cpr)
+        {
+            auto record_decl = coop::global<RecordDecl>::get_global(cpr->rec_info->record)->ptr;
+
+            //copy assignment
+            auto copy_op = coop::FindCopyAssignmentOperators::rec_copy_assignment_operator_map.find(record_decl);
+            if(copy_op == coop::FindCopyAssignmentOperators::rec_copy_assignment_operator_map.end())
+            {
+                //generate code to copy EACH field
+                std::stringstream semantic;
+
+                //make sure the copy will have its own data (emulating deep copy so tmp objects will not destroy shared cold data)
+                std::ifstream ifs(get_src_mod_file_name("copy_assignment_operator_deep_copy_emulation.cpp"));
+                std::string code(
+                    (std::istreambuf_iterator<char>(ifs)),
+                    (std::istreambuf_iterator<char>()));
+
+                replaceAll(code, RECORD_NAME, cpr->record_name);
+                replaceAll(code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+                replaceAll(code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+                replaceAll(code, STRUCT_NAME, cpr->struct_name);
+
+                //the field copies
+                auto fields = cpr->rec_info->fields;
+                auto cold_fields = cpr->rec_info->cold_fields;
+                for(auto field : fields)
+                {
+                    auto type = field->getType();
+
+                    //except for stuff we literally can't copy...
+                    if(type.isConstQualified() || type.isLocalConstQualified() || dyn_cast_or_null<ConstantArrayType>(type.getTypePtr()))
+                    {
+                        continue;
+                    }
+
+                    bool is_cold = std::find(cold_fields.begin(), cold_fields.end(), field) != cold_fields.end();
+                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                    semantic << field->getNameAsString() << " = other_obj.";
+                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                    semantic << field->getNameAsString() << ";\n";
+                }
+
+                replaceAll(code, SEMANTIC, semantic.str());
+                cpr->missing_mandatory << code;
+            }
+        }
+
         void handle_constructors(cold_pod_representation *cpr)
         {
             //create the strings that handle stuff
@@ -381,47 +428,6 @@ namespace coop{
             replaceAll(constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
             replaceAll(constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
             replaceAll(constructor_code, STRUCT_NAME, cpr->struct_name);
-
-            //create the code for copy constructors
-            /*if the copy ctor is implicit, then we must now make sure, that not the cold_data_ptr is copied (implicitly)
-            but rather ALL fields cold and hot - so we emulate a deep copy and temporary copies of objects don't trigger
-            the cold data instances to be destructed*/
-            auto copy_ctor = coop::FindConstructor::rec_copy_constructor_map.find(record_decl);
-            if(copy_ctor == coop::FindConstructor::rec_copy_constructor_map.end())
-            {
-                //there is no definition of a copy constructor - so we make one
-                ifs = std::ifstream (get_src_mod_file_name("copy_constructor_deep_copy_emulation.cpp"));
-                std::string copy_constructor_code(
-                    (std::istreambuf_iterator<char>(ifs)),
-                    (std::istreambuf_iterator<char>()));
-                replaceAll(copy_constructor_code, RECORD_NAME, cpr->record_name);
-                replaceAll(copy_constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-                replaceAll(copy_constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-                replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
-                //generate code to copy EACH field
-                auto fields = cpr->rec_info->fields;
-                auto cold_fields = cpr->rec_info->cold_fields;
-                std::stringstream semantic;
-                for(auto field : fields)
-                {
-                    auto type = field->getType();
-
-                    if(type.isConstQualified() || type.isLocalConstQualified() || dyn_cast_or_null<ConstantArrayType>(type.getTypePtr()))
-                    {
-                        continue;
-                    }
-
-                    bool is_cold = std::find(cold_fields.begin(), cold_fields.end(), field) != cold_fields.end();
-                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
-                    semantic << field->getNameAsString() << " = other_obj.";
-                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
-                    semantic << field->getNameAsString() << ";\n";
-                }
-                replaceAll(copy_constructor_code, SEMANTIC, semantic.str());
-                cpr->missing_mandatory << copy_constructor_code;
-            }
-
-            //create the code for move constructors
 
             //check whether or not the record has the respective methods 
             //if so inject the code where it belongs
@@ -439,13 +445,27 @@ namespace coop{
                 {
                     //inject the code to the existing ctor
                     //get the ctors location
-                    coop::logger::out("changing a constructor");
                     auto r = get_rewriter(ctor->getASTContext());
                     r->InsertTextAfterToken(ctor->getBody()->getLocStart(), constructor_code);
                 }
             }
-            //copy constructor
-            //move constructor
+
+            //create the code for copy constructors
+            /*if the copy ctor is implicit, then we must now make sure, that not the cold_data_ptr is copied (implicitly)
+            but rather ALL fields cold and hot - so we emulate a deep copy and temporary copies of objects don't trigger
+            the cold data instances to be destructed*/
+            auto copy_ctor = coop::FindConstructor::rec_copy_constructor_map.find(record_decl);
+            if(copy_ctor == coop::FindConstructor::rec_copy_constructor_map.end())
+            {
+                //there is no definition of a copy constructor - so we make one
+                ifs = std::ifstream (get_src_mod_file_name("existing_copy_constructor_deep_copy_emulation.cpp"));
+                std::string copy_constructor_code(
+                    (std::istreambuf_iterator<char>(ifs)),
+                    (std::istreambuf_iterator<char>()));
+                replaceAll(copy_constructor_code, RECORD_NAME, cpr->record_name);
+                cpr->missing_mandatory << copy_constructor_code;
+            }
+
         }
 
         void handle_free_list_fragmentation(cold_pod_representation *cpr)

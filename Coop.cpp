@@ -552,6 +552,7 @@ int main(int argc, const char **argv) {
 			std::vector<coop::FindDestructor*> destructor_finders;
 			coop::FindConstructor constructor_finder;
 			coop::FindCopyAssignmentOperators copy_assignment_finder;
+			coop::FindMoveAssignmentOperators move_assignment_finder;
 			coop::FindInstantiations instantiation_finder;
 			coop::FindDeleteCalls deletion_finder;
 
@@ -564,6 +565,7 @@ int main(int argc, const char **argv) {
 					deletion_finder.add_record(rec.record);
 					constructor_finder.add_record(rec.record);
 					copy_assignment_finder.add_record(rec.record);
+					move_assignment_finder.add_record(rec.record);
 
 					coop::FindDestructor *df = new coop::FindDestructor(rec);
 					destructor_finders.push_back(df);
@@ -578,7 +580,8 @@ int main(int argc, const char **argv) {
 			//to find the relevant instantiations
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
 			finder.addMatcher(cxxConstructorDecl(file_match, unless(isImplicit())).bind(coop_constructor_s), &constructor_finder);
-			finder.addMatcher(cxxMethodDecl(file_match, isCopyAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &copy_assignment_finder);
+			finder.addMatcher(cxxMethodDecl(file_match, isDefinition(), isCopyAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &copy_assignment_finder);
+			finder.addMatcher(cxxMethodDecl(file_match, isDefinition(), isMoveAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &move_assignment_finder);
 
 			//generate a regex matcher, that is able to find member usages (excluding those faulty registrations of records...)
 			std::stringstream member_finder_regex;
@@ -693,6 +696,10 @@ int main(int argc, const char **argv) {
 					//give the record a reference to an instance of this new cold_data_struct
 					coop::logger::out("adding freelist pointr to class definition");
 					coop::src_mod::add_cpr_ref_to(&cpr);
+
+					//modifying/creating the record's important cops/move operators
+					coop::logger::out("modifying/creating operators");
+					coop::src_mod::handle_operators(&cpr);
 
 					//modify/create the record's constructors
 					coop::logger::out("modifying/creating constructors");

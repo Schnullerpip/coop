@@ -117,6 +117,12 @@ namespace coop {
             size_t allocation_size_cold_data
         );
 
+        //will detect whether the operators exist
+        //if not the operator declarations will be placed in the missing_mandatory of the cpr
+        void handle_operators(
+            cold_pod_representation *cpr
+        );
+
         //to prevent duplicate location overwrites,  changes that have no valid entry point are stored in cpr->missing_mandatory
         //they can all be injected into the record at once
         void handle_missing_mandatory(

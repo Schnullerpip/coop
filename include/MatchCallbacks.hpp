@@ -179,6 +179,17 @@ namespace coop {
         void run(const MatchFinder::MatchResult &result);
     };
 
+    /*will find move assignment operators*/
+    class FindMoveAssignmentOperators : public MatchFinder::MatchCallback
+    {
+    public:
+        static std::map<const RecordDecl*, const CXXMethodDecl*> rec_move_assignment_operator_map;
+        void add_record(const RecordDecl* r);
+    private:
+        std::vector<const RecordDecl*> records_to_find;
+        void run(const MatchFinder::MatchResult &result);
+    };
+
     /*will register new calls */
     class FindInstantiations : public MatchFinder::MatchCallback {
     public:

@@ -44,6 +44,9 @@ std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTConte
 std::map<const RecordDecl*, const CXXMethodDecl*>
     coop::FindCopyAssignmentOperators::rec_copy_assignment_operator_map;
 
+std::map<const RecordDecl*, const CXXMethodDecl*>
+    coop::FindMoveAssignmentOperators::rec_move_assignment_operator_map;
+
 std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
     coop::FindConstructor::rec_constructor_map;
 std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
@@ -629,8 +632,8 @@ void coop::FindCopyAssignmentOperators::run(const MatchFinder::MatchResult &resu
             auto global_rec = coop::global<RecordDecl>::use(record_decl);
             record_decl = global_rec->ptr;
 
-            //coop::logger::log_stream << "found constructor for " << record_decl->getNameAsString() << "\n" << get_text(constructor, result.Context);
-            //coop::logger::out();
+            coop::logger::log_stream << "found copy operator for " << record_decl->getNameAsString() << "\n" << get_text(copy_assignment_operator, result.Context);
+            coop::logger::out();
 
             auto iter = rec_copy_assignment_operator_map.find(record_decl);
             if(iter == rec_copy_assignment_operator_map.end())
@@ -638,10 +641,34 @@ void coop::FindCopyAssignmentOperators::run(const MatchFinder::MatchResult &resu
                 rec_copy_assignment_operator_map[record_decl] = copy_assignment_operator;
                 return;
             }
-            iter = rec_copy_assignment_operator_map.find(record_decl);
-            if(iter == rec_copy_assignment_operator_map.end())
+        }
+    }
+}
+
+/*FindMoveAssignmentOperators*/
+void coop::FindMoveAssignmentOperators::add_record(const RecordDecl *rd)
+{
+    records_to_find.push_back(rd);
+}
+void coop::FindMoveAssignmentOperators::run(const MatchFinder::MatchResult &result){
+
+    const CXXMethodDecl *move_assignment_operator = result.Nodes.getNodeAs<CXXMethodDecl>(coop_function_s);
+
+    if(move_assignment_operator->isMoveAssignmentOperator()){
+        const RecordDecl *record_decl = move_assignment_operator->getParent();
+        if(record_decl){
+
+            //make sure to only use global instances 
+            auto global_rec = coop::global<RecordDecl>::use(record_decl);
+            record_decl = global_rec->ptr;
+
+            coop::logger::log_stream << "found move operator for " << record_decl->getNameAsString() << "\n" << get_text(move_assignment_operator, result.Context);
+            coop::logger::out();
+
+            auto iter = rec_move_assignment_operator_map.find(record_decl);
+            if(iter == rec_move_assignment_operator_map.end())
             {
-                rec_copy_assignment_operator_map[record_decl] = copy_assignment_operator;
+                rec_move_assignment_operator_map[record_decl] = move_assignment_operator;
                 return;
             }
         }
