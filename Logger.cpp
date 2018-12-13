@@ -80,8 +80,9 @@ namespace coop{
             return out(msg.c_str(), status);
         }
 
-        void out(Progress_Status status){
+        int& out(Progress_Status status){
             out(log_stream, status);
+            return depth;
         }
     }
 }

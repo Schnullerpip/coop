@@ -41,7 +41,7 @@ namespace coop{
         /*outs message to out_stream informing the user of a progress*/
         int& out(std::stringstream& msg_stream, Progress_Status status);
 
-        void out(Progress_Status status);
+        int& out(Progress_Status status);
     }
 }
 

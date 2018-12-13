@@ -160,8 +160,7 @@ int main(int argc, const char **argv) {
 		});
 
 	coop::logger::log_stream << Format::bold_on << "SYSTEM SETUP" << Format::bold_off;
-	coop::logger::out(coop::logger::RUNNING);
-	coop::logger::depth++;
+	coop::logger::out(coop::logger::RUNNING)++;
 
 		coop::input::resolve_config();
 
@@ -298,7 +297,8 @@ int main(int argc, const char **argv) {
 	coop::logger::log_stream << Format::bold_on << "SYSTEM SETUP" << Format::bold_off;
 	coop::logger::out(coop::logger::DONE);
 
-	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::RUNNING)++;
+	coop::logger::log_stream << Format::bold_on << "Data Aggregation" << Format::bold_off << " (parsing AST and invoking callback routines)";
+	coop::logger::out(coop::logger::RUNNING)++;
 
 		//generate the ASTs for each compilation unit
 		std::vector<std::unique_ptr<ASTUnit>> ASTs;
@@ -318,7 +318,8 @@ int main(int argc, const char **argv) {
 
 		coop::logger::depth--;
 		coop::logger::depth--;
-	coop::logger::out("data aggregation (parsing AST and invoking callback routines)", coop::logger::DONE);
+	coop::logger::log_stream << Format::bold_on << "Data Aggregation" << Format::bold_off << " (parsing AST and invoking callback routines)";
+	coop::logger::out(coop::logger::DONE);
 
 
 
@@ -345,7 +346,8 @@ int main(int argc, const char **argv) {
 
 
 
-	coop::logger::out("determining which members are logically related", coop::logger::RUNNING)++;
+	coop::logger::log_stream << Format::bold_on << "determining logically related fields" << Format::bold_off;
+	coop::logger::out(coop::logger::RUNNING)++;
 		const int num_records = member_registration_callback.class_fields_map.size();
 
 		//creating record_info for each record
@@ -426,9 +428,12 @@ int main(int argc, const char **argv) {
 		coop::logger::depth--;
 		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
 
-	coop::logger::out("determining which members are logically related", coop::logger::DONE);
+	coop::logger::depth--;
+	coop::logger::log_stream << Format::bold_on << "determining logically related fields" << Format::bold_off;
+	coop::logger::out(coop::logger::DONE);
 
-	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::RUNNING)++;
+	coop::logger::log_stream << Format::bold_on << "Applying Heuristic" << Format::bold_off << " (prioritize pairings)";
+	coop::logger::out(coop::logger::RUNNING)++;
 
 		//now that we have a matrix for each record, that tells us which of its members are used in which function how many times,
 		//we can take a heuristic and prioritize pairings
@@ -528,10 +533,12 @@ int main(int argc, const char **argv) {
 
 
 	coop::logger::depth--;
-	coop::logger::out("applying heuristic to prioritize pairings", coop::logger::DONE);
+	coop::logger::log_stream << Format::bold_on << "Applying Heuristic" << Format::bold_off << " (prioritize pairings)";
+	coop::logger::out(coop::logger::DONE);
 
 	if(apply_changes_to_source_files){
-		coop::logger::out("applying changes to source files", coop::logger::RUNNING);
+		coop::logger::log_stream << Format::bold_on << "Applying changes to source files" << Format::bold_off;
+		coop::logger::out(coop::logger::RUNNING)++;
 			//now that we know the hot/cold fields we now should process the source-file changes 
 
 			/*first we need another data aggregation
@@ -598,8 +605,11 @@ int main(int argc, const char **argv) {
 
 			auto name_matcher = matchesName(member_finder_regex.str());
 
+			coop::logger::out("Second data aggregation - finding cold field usages relevant ctors/dtors/operators", coop::logger::RUNNING)++;
 			//apply the matchers to all the ASTs
 			for(unsigned i = 0; i < ASTs.size(); ++i){
+				coop::logger::log_stream << "parsing AST[" << i << "]";
+				coop::logger::out();
 				MatchFinder find_cold_member_usages;
 				ASTContext &ast_context = ASTs[i]->getASTContext();
 				coop::ColdFieldCallback cold_field_callback(&cold_members, &ast_context);
@@ -608,6 +618,7 @@ int main(int argc, const char **argv) {
 				find_cold_member_usages.matchAST(ast_context);
 				finder.matchAST(ast_context);
 			}
+			coop::logger::out("Second data aggregation - finding cold field usages relevant ctors/dtors/operators", coop::logger::DONE)--;
 			//destroy the destructor finders
 			for(auto df : destructor_finders){
 				delete df;
@@ -799,10 +810,13 @@ int main(int argc, const char **argv) {
 				coop::logger::err(coop::Should_Exit::NO);
 			}
 
-		coop::logger::out("applying changes to source files", coop::logger::DONE);
+		coop::logger::depth--;
+		coop::logger::log_stream << Format::bold_on << "Applying changes to source files" << Format::bold_off;
+		coop::logger::out(coop::logger::DONE);
 	}
 
-	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::RUNNING);
+	coop::logger::log_stream << Format::bold_on << "System Cleanup" << Format::bold_off;
+	coop::logger::out(coop::logger::RUNNING)++;
 		for(auto &ptr_node : coop::AST_abbreviation::function_nodes)
 		{
 			delete ptr_node.second;
@@ -813,7 +827,9 @@ int main(int argc, const char **argv) {
 		}
 		delete[] record_field_weight_average;
 		delete[] record_stats;
-	coop::logger::out("-----------SYSTEM CLEANUP-----------", coop::logger::DONE);
+	coop::logger::depth--;
+	coop::logger::log_stream << Format::bold_on << "System Cleanup" << Format::bold_off;
+	coop::logger::out(coop::logger::DONE);
 
 
 	return 0;

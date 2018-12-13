@@ -398,18 +398,34 @@ namespace coop{
                     auto type = field->getType();
 
                     //except for stuff we literally can't copy...
-                    if(type.isConstQualified() || type.isLocalConstQualified() || dyn_cast_or_null<ConstantArrayType>(type.getTypePtr()))
+                    if(type.isConstQualified() || type.isLocalConstQualified())
                     {
                         continue;
                     }
 
-                    bool is_cold = std::find(cold_fields.begin(), cold_fields.end(), field) != cold_fields.end();
-                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
-                    semantic << field->getNameAsString() << " = other_obj.";
-                    if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
-                    semantic << field->getNameAsString() << ";\n";
-                }
+                    //if this is a non const static array type - memcpy it
+                    auto t = dyn_cast_or_null<ConstantArrayType>(type.getTypePtr());
+                    if(t)
+                    {
+                        auto s = field->getASTContext().getTypeSizeInChars(t).getQuantity();
+                        coop::logger::log_stream << "found " << field->getNameAsString() << " with size: " << s;
+                        coop::logger::out();
 
+                        bool is_cold = std::find(cold_fields.begin(), cold_fields.end(), field) != cold_fields.end();
+                        semantic << "memcpy(";
+                        if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                        semantic << field->getNameAsString() << ", other_obj.";
+                        if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                        semantic << field->getNameAsString() << ", " << s << ");\n";
+
+                    }else{
+                        bool is_cold = std::find(cold_fields.begin(), cold_fields.end(), field) != cold_fields.end();
+                        if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                        semantic << field->getNameAsString() << " = other_obj.";
+                        if(is_cold) semantic << cpr->cold_data_ptr_name << "->";
+                        semantic << field->getNameAsString() << ";\n";
+                    }
+                }
                 replaceAll(code, SEMANTIC, semantic.str());
                 cpr->missing_mandatory << code;
             }
@@ -463,6 +479,9 @@ namespace coop{
                     (std::istreambuf_iterator<char>(ifs)),
                     (std::istreambuf_iterator<char>()));
                 replaceAll(copy_constructor_code, RECORD_NAME, cpr->record_name);
+                replaceAll(copy_constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+                replaceAll(copy_constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+                replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
                 cpr->missing_mandatory << copy_constructor_code;
             }
 
