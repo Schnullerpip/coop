@@ -20,7 +20,7 @@ analyze-only
 
 
 #if there are sources you would like to ignore list them here and uncomment the command. Should be a child of root folder - e.g. exclude-folders thirdPartySrc/
-#exclude-folders
+#exclude-folders exampleFolder anotherExampleFolder
 
 
 
@@ -31,7 +31,7 @@ analyze-only
 
 
 #this value determines the allocationsize, that is given any cold data freelist, that is created by coop
-#cold-size 1024
+#cold-size 2048
 
 
 
@@ -39,12 +39,12 @@ analyze-only
 #this value can be set to modify the split tolerance - a record that is split will be split by its field weight.
 #a slightly weaker field could be split even though we want it to be considered hot.
 #the split tolerance is a factor that will lower the actual border for fields to be considered hot
-#split-tolerance 0.17
+split-tolerance 0.17
 
 
 
 
-#decides depth dependent weighting of members
+#decides depth dependent weighting of members - this factor is accounted for each loop-depth
 #depth-factor 10.0
 
 
