@@ -3,7 +3,8 @@
 #include "coop_utils.hpp"
 
 #define coop_cold_struct_s "coop_cold_fields_"
-#define coop_safe_struct_acces_method_name "access_cold_data()"
+#define coop_safe_struct_access_method_name "access_cold_data()"
+#define coop_struct_access_method_name_const "access_cold_data_const()"
 #define coop_cold_data_pointer_name "coop_cold_data_ptr"
 #define coop_union_name "coop_union_"
 #define coop_union_instance_name "coop_u"
@@ -47,7 +48,8 @@ namespace coop {
             coop::record::record_info *rec_info = nullptr;
 
             //this stringstream will collect all mandatory commands that will be added to a record, if the record doesn't have the respective methods (ctor/dtor...)
-            std::stringstream missing_mandatory;
+            std::stringstream missing_mandatory_public;
+            std::stringstream missing_mandatory_private;
         };
 
         void include_file(

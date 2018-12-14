@@ -69,18 +69,6 @@ void fill_loop_member_matrix(
 	std::set<const FieldDecl*> *fields
 );
 
-//TODO DEBUG DELETE THIS
-template<typename T>
-std::string get_text(T* t, ASTContext *ast_context){
-    SourceManager &src_man = ast_context->getSourceManager();
-
-    clang::SourceLocation b(t->getLocStart()), _e(t->getLocEnd());
-    clang::SourceLocation e(clang::Lexer::getLocForEndOfToken(_e, 0, src_man, ast_context->getLangOpts()));
-
-    return std::string(src_man.getCharacterData(b),
-        src_man.getCharacterData(e)-src_man.getCharacterData(b));
-}
-
 float field_weight_depth_factor_g = coop_field_weight_depth_factor_f;
 
 //main start
@@ -267,8 +255,14 @@ int main(int argc, const char **argv) {
         StatementMatcher members_used_in_for_loops = memberExpr(hasAncestor(forStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
         StatementMatcher members_used_in_while_loops = memberExpr(hasAncestor(whileStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
 
-        StatementMatcher delete_calls =
-            cxxDeleteExpr(file_match, hasDescendant(declRefExpr().bind(coop_class_s))).bind(coop_deletion_s);
+		//StatementMatcher deleted_instance =
+		//	anyOf(ignoringParenImpCasts(arraySubscriptExpr().bind(coop_array_idx_s)), ignoringParenImpCasts(declRefExpr().bind(coop_class_s)));
+
+       // StatementMatcher delete_calls =
+       //     cxxDeleteExpr(file_match, ignoringParenImpCasts(hasDescendant(deleted_instance))).bind(coop_deletion_s);
+
+	   StatementMatcher delete_calls = cxxDeleteExpr(file_match).bind(coop_deletion_s);
+
 
 
 
@@ -562,8 +556,7 @@ int main(int argc, const char **argv) {
 			coop::FindMoveAssignmentOperators move_assignment_finder;
 			coop::FindInstantiations instantiation_finder;
 			coop::FindDeleteCalls deletion_finder;
-
-			finder.addMatcher(delete_calls, &deletion_finder);
+			coop::AccessSpecCallback access_spec_finder;
 
 			for(int i = 0; i < num_records; ++i){
 				auto &rec = record_stats[i];
@@ -585,6 +578,8 @@ int main(int argc, const char **argv) {
 			}
 
 			//to find the relevant instantiations
+			finder.addMatcher(cxxRecordDecl(file_match, hasDescendant(accessSpecDecl().bind(coop_access_s))).bind(coop_class_s), &access_spec_finder);
+			finder.addMatcher(delete_calls, &deletion_finder);
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
 			finder.addMatcher(cxxConstructorDecl(file_match, unless(isImplicit())).bind(coop_constructor_s), &constructor_finder);
 			finder.addMatcher(cxxMethodDecl(file_match, isDefinition(), isCopyAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &copy_assignment_finder);

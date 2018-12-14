@@ -12,6 +12,13 @@ std::map<const RecordDecl*, std::set<const FieldDecl*>>
 std::map<const RecordDecl*, std::string>
     coop::MemberRegistrationCallback::class_file_map = {};
 
+
+std::map<const RecordDecl*, std::set<const AccessSpecDecl*>>
+    coop::AccessSpecCallback::record_public_access_map = {};
+
+std::map<const RecordDecl*, std::set<const AccessSpecDecl*>>
+    coop::AccessSpecCallback::record_private_access_map = {};
+
 std::set<std::pair<const FunctionDecl*, std::string>>
     coop::FunctionPrototypeRegistrationCallback::function_prototypes = {};
 
@@ -134,6 +141,37 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
             class_fields_map[rd].insert(coop::global<FieldDecl>::use(f)->ptr);
         }
     }
+}
+
+
+/*AccessSpecCallback*/
+
+void coop::AccessSpecCallback::run(const MatchFinder::MatchResult &result)
+{
+    const RecordDecl *record_decl = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
+    const AccessSpecDecl *acc_decl = result.Nodes.getNodeAs<AccessSpecDecl>(coop_access_s);
+
+    //make sure only to work with the global instances
+    auto global_rec = coop::global<RecordDecl>::use(record_decl);
+    record_decl = global_rec->ptr;
+
+    if(record_decl)
+    {
+        bool isPublic, isPrivate;
+        auto access_spec = acc_decl->getAccess();
+        if(isPublic =  (access_spec == clang::AccessSpecifier::AS_public))
+        {
+            auto publics = record_public_access_map[record_decl];
+            publics.insert(acc_decl);
+        }
+        else if(isPrivate = (access_spec == clang::AccessSpecifier::AS_private))
+        {
+            auto privates = record_private_access_map[record_decl];
+            privates.insert(acc_decl);
+        }
+        //right now we dont care for protected
+    }
+
 }
 
 /*FunctionPrototypeRegistrationCallback*/
@@ -535,16 +573,24 @@ void coop::FindDeleteCalls::add_record(const RecordDecl *rd)
 void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
 
     const CXXDeleteExpr *delete_call = result.Nodes.getNodeAs<CXXDeleteExpr>(coop_deletion_s);
-    const DeclRefExpr *deleted_instance_ref = result.Nodes.getNodeAs<DeclRefExpr>(coop_class_s);
 
     if(!delete_call->isArrayForm()){
-        const RecordDecl *record_decl = deleted_instance_ref->getBestDynamicClassType();
+
+        const clang::Type *destroyed_type = delete_call->getDestroyedType().getTypePtr();
+        const RecordDecl *record_decl = destroyed_type->getAsCXXRecordDecl();
+
+        if(!record_decl)
+        {
+            //we cant deduce an associated record decl - so this is most certainly not something we want to change!
+            return;
+        }
 
         //make sure only to work with the global instances
         auto global_rec = coop::global<RecordDecl>::use(record_decl);
         record_decl = global_rec->ptr;
 
         if(record_decl){
+            //check whether the deletion has something to do with a record that was splitted by coop
             if(std::find(record_deletions_to_find.begin(), record_deletions_to_find.end(), record_decl) != record_deletions_to_find.end()){
                 //we found a relevant deletion
                 coop::FindDeleteCalls::delete_calls_map[record_decl].push_back({delete_call, result.Context});

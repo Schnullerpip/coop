@@ -34,6 +34,7 @@ using namespace clang::ast_matchers;
 
 //macros that can easily be refactored
 #define coop_class_s "class"
+#define coop_access_s "access_decl"
 #define coop_member_s "member"
 #define coop_function_s "function"
 #define coop_function_call_s "functionCall"
@@ -54,6 +55,7 @@ using namespace clang::ast_matchers;
 #define coop_deletion_s "delete"
 
 #define coop_constructor_s "constructor"
+#define coop_array_idx_s "array_idx"
 
 
 namespace coop{

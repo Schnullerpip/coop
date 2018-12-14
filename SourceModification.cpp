@@ -285,22 +285,36 @@ namespace coop{
 
         void add_cpr_ref_to( coop::src_mod::cold_pod_representation *cpr)
         {
-            std::stringstream ss;
-            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "intrusive_record_addition.cpp";
-            std::ifstream ifs(ss.str());
-            std::string file_content(
-                (std::istreambuf_iterator<char>(ifs)),
-                (std::istreambuf_iterator<char>()));
+            {//adding the data pointer to the record
+                std::stringstream ss;
+                ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "pointer_to_cold_data.cpp";
+                std::ifstream ifs(ss.str());
+                std::string file_content(
+                    (std::istreambuf_iterator<char>(ifs)),
+                    (std::istreambuf_iterator<char>()));
 
-            replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
-            replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-            replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-            replaceAll(file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
+                replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
+                replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+                cpr->missing_mandatory_private << file_content;
+            }
 
+            {//adding the public access method to the record
+                std::stringstream ss;
+                ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "access_method_to_cold_data.cpp";
+                std::ifstream ifs(ss.str());
+                std::string file_content(
+                    (std::istreambuf_iterator<char>(ifs)),
+                    (std::istreambuf_iterator<char>()));
+
+                replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
+                replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+                replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+                cpr->missing_mandatory_public << file_content;
+            }
             //this function will only be called if ri->cold_fields is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
-            get_rewriter(cpr->rec_info->record->getASTContext())->
-                InsertTextBefore(cpr->rec_info->cold_fields[0]->getLocStart(), file_content);
+            //get_rewriter(cpr->rec_info->record->getASTContext())->
+            //    InsertTextBefore(cpr->rec_info->cold_fields[0]->getLocStart(), file_content);
         }
 
         void add_memory_allocation_to(
@@ -345,10 +359,20 @@ namespace coop{
             cold_pod_representation *cpr,
             ASTContext *ast_context)
         {
-            std::string field_decl_name = mem_expr->getMemberDecl()->getNameAsString();
-
+            auto member_decl = mem_expr->getMemberDecl();
+            std::string field_decl_name = member_decl->getNameAsString();
             std::stringstream ss;
-            ss << coop_safe_struct_acces_method_name << "->" << field_decl_name;
+
+            //check if the memberExpr's callee (declRefExpr) is supposed to handle a const instance
+            if(mem_expr->getBase()->getType().isConstQualified())
+            {
+                ss << coop_struct_access_method_name_const;
+            }else{
+                ss << coop_safe_struct_access_method_name;
+            }
+
+            ss << "->" << field_decl_name;
+
 
             //usage_text.replace(
             //    usage_text.find(field_decl_name),
@@ -357,15 +381,6 @@ namespace coop{
 
             get_rewriter(ast_context)->
                 ReplaceText(mem_expr->getMemberLoc(), ss.str());
-        }
-
-        //TODO DELETE THIS
-        void isNull(std::string n, const void *ptr){
-            if(!ptr)
-            {
-                coop::logger::log_stream << n << "IS NULL";
-                coop::logger::out();
-            }
         }
 
         void handle_operators(cold_pod_representation *cpr)
@@ -427,7 +442,7 @@ namespace coop{
                     }
                 }
                 replaceAll(code, SEMANTIC, semantic.str());
-                cpr->missing_mandatory << code;
+                cpr->missing_mandatory_public << code;
             }
         }
 
@@ -455,7 +470,7 @@ namespace coop{
             {
                 //there is no ctor -> create one
                 coop::logger::out("no constructors found");
-                cpr->missing_mandatory << "\n" << cpr->record_name << "(){" << constructor_code << "}\n";
+                cpr->missing_mandatory_public << "\n" << cpr->record_name << "(){" << constructor_code << "}\n";
             }else{
                 for(auto ctor : ctors)
                 {
@@ -482,7 +497,7 @@ namespace coop{
                 replaceAll(copy_constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
                 replaceAll(copy_constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
                 replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
-                cpr->missing_mandatory << copy_constructor_code;
+                cpr->missing_mandatory_public << copy_constructor_code;
             }
 
         }
@@ -495,7 +510,7 @@ namespace coop{
 
             //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
             std::stringstream free_stmt;
-            free_stmt << "//marks the cold_data_freelist's cold_struct instance as reusable\n"
+            free_stmt
                << cpr->cold_data_ptr_name << "->~"
                << cpr->struct_name << "();\n"
                << cpr->free_list_instance_name_cold
@@ -526,7 +541,7 @@ namespace coop{
 
                     //since there is no existing definition of a destructor - we make one
                     //missing_mandatory will be added in conclusion
-                    cpr->missing_mandatory << "\n~" << record_decl->getNameAsString() << "()\n{\n" << free_stmt.str() << "\n}\n";
+                    cpr->missing_mandatory_public << "\n~" << record_decl->getNameAsString() << "()\n{\n" << free_stmt.str() << "\n}\n";
                 }
             }
         }
@@ -613,7 +628,13 @@ namespace coop{
             auto rec = cpr->rec_info->record;
             auto &ast_ctxt = rec->getASTContext();
             auto r = get_rewriter(ast_ctxt);
-            r->InsertTextBefore(rec->getLocEnd(), cpr->missing_mandatory.str());
+
+            //make sure the access modifiers fit in
+            std::stringstream ss;
+            ss << "private:\n" << cpr->missing_mandatory_private.str();
+            ss << "\npublic:\n" << cpr->missing_mandatory_public.str();
+
+            r->InsertTextBefore(rec->getLocEnd(), ss.str());
         }
     }
 }

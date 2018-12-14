@@ -35,6 +35,16 @@ namespace coop {
         virtual void run(const MatchFinder::MatchResult &result);
     };
 
+    /*will find all the access specs for a record*/
+    class AccessSpecCallback : public MatchFinder::MatchCallback
+    {
+    public:
+        static std::map<const RecordDecl*, std::set<const AccessSpecDecl*>> record_public_access_map;
+        static std::map<const RecordDecl*, std::set<const AccessSpecDecl*>> record_private_access_map;
+    private:
+        virtual void run(const MatchFinder::MatchResult &result);
+    };
+
 
     /*  
         will cache all the pure function prototypes so later other functionDecls can be attributed to this prototype
