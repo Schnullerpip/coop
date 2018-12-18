@@ -116,7 +116,10 @@ namespace coop {
             cold_pod_representation *cpr,
             const FunctionDecl *main_function_node,
             size_t allocation_size_hot_data,
-            size_t allocation_size_cold_data
+            size_t allocation_size_cold_data,
+            size_t cache_line = 64,
+            size_t hot_alignment = 0,
+            size_t cold_alignment = 0
         );
 
         //will detect whether the operators exist

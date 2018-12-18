@@ -224,6 +224,9 @@ int main(int argc, const char **argv) {
 
 		//CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
 		ClangTool Tool(*compilation_database, user_files);
+		//those don't work...
+		//Tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster("-march=x86-64"));
+		Tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster("-m64"));
 
 		//with the user files defined as a match regex we can now initialize the matchers
 		std::string file_match_string = coop::match::get_file_regex_match_condition(((!include_files.empty() || user_include_path_root.empty()) ? nullptr : user_include_path_root.c_str()));
@@ -752,7 +755,10 @@ int main(int argc, const char **argv) {
 							&cpr,
 							coop::FunctionRegistrationCallback::main_function_ptr,
 							hot_data_allocation_size_in_byte,
-							cold_data_allocation_size_in_byte
+							cold_data_allocation_size_in_byte,
+							l1.line_size,
+							l1.line_size,
+							l1.line_size
 						);
 					}
 

@@ -27,6 +27,28 @@
 #define RECORD_TYPE "RECORD_TYPE"
 #define FIELD_INITIALIZERS "FIELD_INITIALIZERS"
 #define SEMANTIC "SEMANTIC"
+#define HOT_ALIGNMENT "HOT_ALIGNMENT"
+#define COLD_ALIGNMENT "COLD_ALIGNMENT"
+#define BYTE_DATA_HOT "BYTE_DATA_HOT"
+#define BYTE_DATA_COLD "BYTE_DATA_COLD"
+
+namespace {
+    static size_t size_plus_alignments(size_t raw_size, size_t cache_line_size, size_t type_size)
+    {
+        //how many elements fit in a line //aka after how many do we need a new alignment
+        size_t elems_per_c_line = cache_line_size/type_size;
+
+        //how many elements fit the raw data? //aka how many times will we need to realign
+        size_t elems_total = raw_size / elems_per_c_line;
+
+        //alignment per chunk
+        size_t rest_bytes_after_a_chunk = cache_line_size % type_size;
+
+        size_t total_alignment_offset = rest_bytes_after_a_chunk * elems_total/elems_per_c_line;
+
+        return raw_size + total_alignment_offset;
+    }
+}
 
 namespace {
     template<typename T>
@@ -585,7 +607,10 @@ namespace coop{
             cold_pod_representation *cpr,
             const FunctionDecl *main_function_node,
             size_t allocation_size_hot_data,
-            size_t allocation_size_cold_data)
+            size_t allocation_size_cold_data,
+            size_t cache_line,
+            size_t hot_alignment,
+            size_t cold_alignment)
         {
             std::stringstream ss;
             ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "free_list_definition.cpp";
@@ -611,12 +636,44 @@ namespace coop{
             ss << cpr->qualifier << cpr->free_list_instance_name_cold;
             replaceAll(file_content, FREE_LIST_INSTANCE_COLD, ss.str().c_str());
 
+            //determine the size considering alignment (possibly a LOT of alignment offsets)
+            size_t record_size_in_byte = cpr->rec_info->record->getASTContext().getTypeInfo(cpr->rec_info->record->getTypeForDecl()).Width/8;
+            size_t cold_fields_size_in_byte = 0;
+            for(auto cf : cpr->rec_info->cold_fields)
+            {
+                cold_fields_size_in_byte += cf->getASTContext().getTypeInfo(cf->getType()).Width/8;
+            }
+
+
+            size_t hot_size_plus_alignment_offsets =
+                size_plus_alignments(allocation_size_hot_data, cache_line, record_size_in_byte - cold_fields_size_in_byte);
+
+            size_t cold_size_plus_alignment_offsets =
+                size_plus_alignments(allocation_size_cold_data, cache_line, cold_fields_size_in_byte);
+
+            //coop::logger::log_stream << Format::bold_on << record_size_in_byte << " " << cold_fields_size_in_byte  << "\n" << hot_size_plus_alignment_offsets << " " << cold_size_plus_alignment_offsets << Format::bold_off;
+            //coop::logger::out();
+
             ss.str("");
-            ss << allocation_size_hot_data;
+            ss << hot_size_plus_alignment_offsets;
             replaceAll(file_content, SIZE_HOT, ss.str().c_str());
             ss.str("");
-            ss << allocation_size_cold_data;
+            ss << cold_size_plus_alignment_offsets;
             replaceAll(file_content, SIZE_COLD, ss.str().c_str());
+
+            ss.str("");
+            ss << hot_alignment;
+            replaceAll(file_content, HOT_ALIGNMENT, ss.str().c_str());
+            ss.str("");
+            ss << cold_alignment;
+            replaceAll(file_content, COLD_ALIGNMENT, ss.str().c_str());
+
+            ss.str("");
+            ss << "byte_data_hot_" << cpr->record_name;
+            replaceAll(file_content, BYTE_DATA_HOT, ss.str());
+            ss.str("");
+            ss << "byte_data_cold_" << cpr->record_name;
+            replaceAll(file_content, BYTE_DATA_COLD, ss.str());
 
             get_rewriter(main_function_node->getASTContext())->
                 InsertTextBefore(main_function_node->getLocStart(), file_content);
