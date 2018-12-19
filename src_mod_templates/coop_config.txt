@@ -26,12 +26,15 @@ analyze-only
 
 
 #this value determines the allocationsize, that is given any hot data freelist, that is created by coop
-#hot-size 1024
+#coop will guarantee the free list to hold enough space for hot-elements 
+#hot-elements 1024
 
 
 
 #this value determines the allocationsize, that is given any cold data freelist, that is created by coop
-#cold-size 2048
+#coop will guarantee the free list to hold enough space for cold-elements 
+#since 'deep' copies of hot data might lead to new creation of cold data it is advised to make this at least double the hot-elements
+#cold-elements 2048
 
 
 

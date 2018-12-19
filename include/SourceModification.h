@@ -69,9 +69,7 @@ namespace coop {
         void create_cold_struct_for(
             coop::record::record_info*,
             cold_pod_representation*,
-            std::string user_include_path,
-            size_t allocation_size_hot_data,
-            size_t allocation_size_cold_data
+            std::string user_include_path
         );
         
         void create_free_list_for(

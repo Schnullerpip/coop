@@ -12,6 +12,20 @@ constexpr size_t max(){
 	return sizeof(R) > sizeof(P) ? sizeof(R) : sizeof(P);
 }
 
+namespace coop_cex{
+
+/*will see hoy many elements fit in a cache_line, calculate how much alignment offsets will be needed
+	and returns a size, that holds enough space to keep elements +their alignmentoffsets
+	minimized for -std=c++11 compatibility*/
+template<size_t raw_size, size_t cache_line_size, size_t type_size>
+constexpr size_t size_plus_alignments()
+{
+    return raw_size + cache_line_size + (cache_line_size % type_size) * ((raw_size/(cache_line_size/type_size))/(cache_line_size/type_size));
+}
+
+}//namespace coop_cex
+
+
 template<typename T>
 class coop_free_list
 {
@@ -22,11 +36,10 @@ class coop_free_list
 		char **_char_ptr_ptr;
 	};
 
-    T * free_ptr = nullptr;
 public:
+    T * free_ptr = nullptr;
 	coop_free_list(char * byte_data, char *data_end, size_t alignment)
     {
-
 		assert("data_end can't be smaller than byte_data" && data_end > byte_data);
 		
 		union {
@@ -34,34 +47,20 @@ public:
 			T * as_data_ptr;
 		};
 
-		size_t size = (data_end - byte_data);
-
-		//so the first element will be aligned 
+		//so the first element will also be aligned 
 		as_char_ptr = align(byte_data, alignment, true);
 
-        //how many elements fit in a line //aka after how many do we need a new alignment offset
-        size_t Ts_per_chunk = alignment/sizeof(T);
-		Ts_per_chunk = (Ts_per_chunk == 0 ? 1 : Ts_per_chunk);
-
-		size_t padding_to_next = alignment - sizeof(T)*Ts_per_chunk;
-
-		size /= sizeof(T);
 		free_ptr = as_data_ptr;
 
-		size_t Ts = 0;
 		for(_ptr = free_ptr; _char_ptr < data_end; _ptr = *_next)
 		{
-			if(++Ts > Ts_per_chunk)
-				Ts = 1;
-			char * next = _char_ptr+sizeof(T)+(Ts == Ts_per_chunk ? padding_to_next : 0);
+			char * next = align(_char_ptr+sizeof(T), alignment, true);
 			if(next >= data_end)
 			{
-				printf("aha\n");
 				*_next = nullptr;
 				break;
 			}
 			*_char_ptr_ptr = next;
-			printf("new free ptr: %p\n\tnext: %p (+ %lu)\n\n", _ptr, *_next, sizeof(T)+(Ts == Ts_per_chunk ? padding_to_next : 0));
 		}
 	}
 

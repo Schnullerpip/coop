@@ -159,12 +159,12 @@ void coop::AccessSpecCallback::run(const MatchFinder::MatchResult &result)
     {
         bool isPublic, isPrivate;
         auto access_spec = acc_decl->getAccess();
-        if(isPublic =  (access_spec == clang::AccessSpecifier::AS_public))
+        if((isPublic =  (access_spec == clang::AccessSpecifier::AS_public)))
         {
             auto publics = record_public_access_map[record_decl];
             publics.insert(acc_decl);
         }
-        else if(isPrivate = (access_spec == clang::AccessSpecifier::AS_private))
+        else if((isPrivate = (access_spec == clang::AccessSpecifier::AS_private)))
         {
             auto privates = record_private_access_map[record_decl];
             privates.insert(acc_decl);

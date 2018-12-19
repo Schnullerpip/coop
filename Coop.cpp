@@ -114,17 +114,17 @@ int main(int argc, const char **argv) {
 			coop::logger::depth--;
 		});
 
-		size_t hot_data_allocation_size_in_byte = coop_default_hot_data_allocation_size_i;
-		coop::input::register_parametered_config("hot-size", [&hot_data_allocation_size_in_byte](std::vector<std::string> args){
-			hot_data_allocation_size_in_byte = atoi(args[0].c_str());
-			coop::logger::log_stream << "[Config]::default hot data allocation size is set to: " << hot_data_allocation_size_in_byte;
+		size_t number_hot_data_elements = coop_default_hot_data_allocation_size_i;
+		coop::input::register_parametered_config("hot-elements", [&number_hot_data_elements](std::vector<std::string> args){
+			number_hot_data_elements = atoi(args[0].c_str());
+			coop::logger::log_stream << "[Config]::default hot data elements number is set to: " << number_hot_data_elements;
 			coop::logger::out();
 		});
 
-		size_t cold_data_allocation_size_in_byte = coop_default_cold_data_allocation_size_i;
-		coop::input::register_parametered_config("cold-size", [&cold_data_allocation_size_in_byte](std::vector<std::string> args){
-			cold_data_allocation_size_in_byte = atoi(args[0].c_str());
-			coop::logger::log_stream << "[Config]::default cold data allocation size is set to: " << cold_data_allocation_size_in_byte;
+		size_t number_cold_data_elements = coop_default_cold_data_allocation_size_i;
+		coop::input::register_parametered_config("cold-elements", [&number_cold_data_elements](std::vector<std::string> args){
+			number_cold_data_elements = atoi(args[0].c_str());
+			coop::logger::log_stream << "[Config]::default cold data elements number is set to: " << number_cold_data_elements;
 			coop::logger::out();
 		});
 
@@ -667,9 +667,7 @@ int main(int argc, const char **argv) {
 					coop::src_mod::create_cold_struct_for(
 						&rec,
 						&cpr,
-						user_include_path_root,
-						hot_data_allocation_size_in_byte,
-						cold_data_allocation_size_in_byte
+						user_include_path_root
 					);
 					
 					//if the user did not give us an include path that we can copy the free_list template into 
@@ -683,8 +681,8 @@ int main(int argc, const char **argv) {
 					//coop::logger::out("injecting memory allocations for the freelistinstances");
 					//coop::src_mod::add_memory_allocation_to(
 					//	&cpr,
-					//	hot_data_allocation_size_in_byte,
-					//	cold_data_allocation_size_in_byte
+					//	number_hot_data_elements,
+					//	number_cold_data_elements
 					//);
 
 					coop::logger::out("extracting cold fields");
@@ -754,8 +752,8 @@ int main(int argc, const char **argv) {
 						coop::src_mod::define_free_list_instances(
 							&cpr,
 							coop::FunctionRegistrationCallback::main_function_ptr,
-							hot_data_allocation_size_in_byte,
-							cold_data_allocation_size_in_byte,
+							number_hot_data_elements,
+							number_cold_data_elements,
 							l1.line_size,
 							l1.line_size,
 							l1.line_size
