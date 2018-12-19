@@ -112,7 +112,7 @@ namespace coop {
         );
         void define_free_list_instances(
             cold_pod_representation *cpr,
-            const FunctionDecl *main_function_node,
+            std::stringstream &injection_above_main,
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data,
             size_t cache_line = 64,
@@ -130,6 +130,11 @@ namespace coop {
         //they can all be injected into the record at once
         void handle_missing_mandatory(
             cold_pod_representation *cpr
+        );
+
+        void handle_injection_above_main(
+            std::stringstream&,
+            const FunctionDecl *main_function_node
         );
     }
 }

@@ -360,7 +360,10 @@ namespace coop{
             std::string field_decl_name = member_decl->getNameAsString();
             std::stringstream ss;
 
-            //check if the memberExpr's callee (declRefExpr) is supposed to handle a const instance
+            //make sure that the right access method is called -> inheritance 
+            ss << field->getParent()->getQualifiedNameAsString() << "::";
+
+            //check if the memberExpr's callee is supposed to handle a const instance
             if(mem_expr->getBase()->getType().isConstQualified())
             {
                 ss << coop_struct_access_method_name_const;
@@ -369,12 +372,6 @@ namespace coop{
             }
 
             ss << "->" << field_decl_name;
-
-
-            //usage_text.replace(
-            //    usage_text.find(field_decl_name),
-            //    field_decl_name.length(),
-            //    ss.str());
 
             get_rewriter(ast_context)->
                 ReplaceText(mem_expr->getMemberLoc(), ss.str());
@@ -580,7 +577,7 @@ namespace coop{
 
         void define_free_list_instances(
             cold_pod_representation *cpr,
-            const FunctionDecl *main_function_node,
+            std::stringstream &injection_above_main,
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data,
             size_t cache_line,
@@ -611,29 +608,6 @@ namespace coop{
             ss << cpr->qualifier << cpr->free_list_instance_name_cold;
             replaceAll(file_content, FREE_LIST_INSTANCE_COLD, ss.str().c_str());
 
-            //determine the size considering alignment (possibly a LOT of alignment offsets)
-            //this size will already consider the col fields to be seperated from the record BUT this will right now not work if a parent record is split as well!!
-            //size_t record_size_in_byte = cpr->rec_info->record->getASTContext().getTypeInfo(cpr->rec_info->record->getTypeForDecl()).Width/8;
-            //the record will have an additional pointer (to the cold data struct) consider it!
-            //record_size_in_byte +=8;//TODO this should be arch dependent...
-
-            //size_t cold_fields_size_in_byte = 0;
-            //for(auto cf : cpr->rec_info->cold_fields)
-            //{
-            //    cold_fields_size_in_byte += cf->getASTContext().getTypeInfo(cf->getType()).Width/8;
-            //}
-            //size_t raw_size_to_hold_n_hot_elements = record_size_in_byte * allocation_size_hot_data;
-            //size_t raw_size_to_hold_n_cold_elements = cold_fields_size_in_byte * allocation_size_cold_data;
-
-            //size_t hot_size_plus_alignment_offsets =
-            //    size_plus_alignments(raw_size_to_hold_n_hot_elements, cache_line, record_size_in_byte - cold_fields_size_in_byte);
-
-            //size_t cold_size_plus_alignment_offsets =
-            //    size_plus_alignments(raw_size_to_hold_n_cold_elements, cache_line, cold_fields_size_in_byte);
-
-            //coop::logger::log_stream << Format::bold_on << record_size_in_byte << " " << cold_fields_size_in_byte  << "\n" << hot_size_plus_alignment_offsets << " " << cold_size_plus_alignment_offsets << Format::bold_off;
-            //coop::logger::out();
-
             ss.str("");
             ss << allocation_size_hot_data;
             replaceAll(file_content, SIZE_HOT, ss.str());
@@ -663,8 +637,7 @@ namespace coop{
             //ss << "byte_data_cold_" << cpr->record_name;
             //replaceAll(file_content, BYTE_DATA_COLD, ss.str());
 
-            get_rewriter(main_function_node->getASTContext())->
-                InsertTextBefore(main_function_node->getLocStart(), file_content);
+            injection_above_main << file_content;
         }
 
 
@@ -680,6 +653,14 @@ namespace coop{
             ss << "\npublic:\n" << cpr->missing_mandatory_public.str();
 
             r->InsertTextBefore(rec->getLocEnd(), ss.str());
+        }
+
+        void handle_injection_above_main(
+            std::stringstream &injection_above_main,
+            const FunctionDecl *main_function_node)
+        {
+            get_rewriter(main_function_node->getASTContext())->
+                InsertTextBefore(main_function_node->getLocStart(), injection_above_main.str());
         }
     }
 }

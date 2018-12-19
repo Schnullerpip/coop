@@ -626,6 +626,9 @@ int main(int argc, const char **argv) {
 			//traverse all the records -> if they have cold fields -> split them in a cold_data struct
 			std::set<const char *> files_that_need_to_include_free_list;
 			std::set<std::string> files_that_need_to_be_included_in_main;
+			//will hold all additions that need to be made before the main function, so no duplicate location overwrites can occur
+			std::stringstream injection_above_main;
+
 			for(int i = 0; i < num_records; ++i){
 				coop::record::record_info &rec = record_stats[i];
 
@@ -751,7 +754,7 @@ int main(int argc, const char **argv) {
 						coop::logger::out("defining free list instances");
 						coop::src_mod::define_free_list_instances(
 							&cpr,
-							coop::FunctionRegistrationCallback::main_function_ptr,
+							injection_above_main,
 							number_hot_data_elements,
 							number_cold_data_elements,
 							l1.line_size,
@@ -779,6 +782,11 @@ int main(int argc, const char **argv) {
 				coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString() << Format::def;
 				coop::logger::out(coop::logger::DONE);
 			}
+
+			coop::src_mod::handle_injection_above_main(
+				injection_above_main,
+				coop::FunctionRegistrationCallback::main_function_ptr);
+
 			//writes from the rewriter buffers into the actual files
 			coop::src_mod::apply_changes();
 
