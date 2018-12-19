@@ -14,13 +14,23 @@ constexpr size_t max(){
 
 namespace coop_cex{
 
+/*will exclude division by zero for compiletime execution divisions*/
+template<size_t d0, size_t d1>
+constexpr size_t div_or_1()
+{
+	return (d1 > d0 ? 1 : d0/d1);
+}
+
 /*will see hoy many elements fit in a cache_line, calculate how much alignment offsets will be needed
 	and returns a size, that holds enough space to keep elements +their alignmentoffsets
 	minimized for -std=c++11 compatibility*/
 template<size_t raw_size, size_t cache_line_size, size_t type_size>
 constexpr size_t size_plus_alignments()
 {
-    return raw_size + cache_line_size + (cache_line_size % type_size) * ((raw_size/(cache_line_size/type_size))/(cache_line_size/type_size));
+    return 	raw_size +
+			cache_line_size +
+			(cache_line_size % type_size) *
+			((raw_size / (div_or_1<cache_line_size,type_size>())) / (div_or_1<cache_line_size,type_size>()));
 }
 
 }//namespace coop_cex

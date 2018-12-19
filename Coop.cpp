@@ -575,7 +575,7 @@ int main(int argc, const char **argv) {
 					std::stringstream ss;
 					ss << "~" << rec.record->getNameAsString();
 					finder.addMatcher(
-						cxxDestructorDecl(file_match, hasName(ss.str().c_str())).bind(coop_destructor_s),
+						cxxDestructorDecl(file_match, isDefinition(), hasName(ss.str().c_str())).bind(coop_destructor_s),
 						df);
 				}
 			}
@@ -584,7 +584,7 @@ int main(int argc, const char **argv) {
 			finder.addMatcher(cxxRecordDecl(file_match, hasDescendant(accessSpecDecl().bind(coop_access_s))).bind(coop_class_s), &access_spec_finder);
 			finder.addMatcher(delete_calls, &deletion_finder);
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
-			finder.addMatcher(cxxConstructorDecl(file_match, unless(isImplicit())).bind(coop_constructor_s), &constructor_finder);
+			finder.addMatcher(cxxConstructorDecl(file_match, isDefinition(), unless(isImplicit())).bind(coop_constructor_s), &constructor_finder);
 			finder.addMatcher(cxxMethodDecl(file_match, isDefinition(), isCopyAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &copy_assignment_finder);
 			finder.addMatcher(cxxMethodDecl(file_match, isDefinition(), isMoveAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &move_assignment_finder);
 
@@ -632,28 +632,28 @@ int main(int argc, const char **argv) {
 			for(int i = 0; i < num_records; ++i){
 				coop::record::record_info &rec = record_stats[i];
 
-				if(user_wants_to_confirm_each_record)
-				{
-					std::string input = "n";
-					coop::logger::log_stream << "now touching " << rec.record->getNameAsString().c_str() << ". Allow coop to apply changes (y)?";
-					coop::logger::out();
-					if(!getline(std::cin, input))
-					{
-						coop::logger::out("cant process input");
-					}
-					if(!(input == "y" || input == "Y"))
-					{
-						continue;
-					}
-				}
-
-				coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString().c_str() << Format::def;
-				coop::logger::out(coop::logger::RUNNING);
-				coop::logger::depth++;
-
 
 				//this check indicates wether or not the record has cold fields
 				if(!rec.cold_fields.empty()){
+					if(user_wants_to_confirm_each_record)
+					{
+						std::string input = "n";
+						coop::logger::log_stream << "now touching " << rec.record->getNameAsString().c_str() << ". Allow coop to apply changes (y)?";
+						coop::logger::out();
+						if(!getline(std::cin, input))
+						{
+							coop::logger::out("cant process input");
+						}
+						if(!(input == "y" || input == "Y"))
+						{
+							continue;
+						}
+					}
+
+					coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString().c_str() << Format::def;
+					coop::logger::out(coop::logger::RUNNING);
+					coop::logger::depth++;
+
 					//local POD carrying context information from function to function
 					coop::src_mod::cold_pod_representation cpr;
 
@@ -776,11 +776,11 @@ int main(int argc, const char **argv) {
 					if(cpr.is_header_file){
 						files_that_need_to_be_included_in_main.insert(cpr.file_name);
 					}
-				}
 
-				coop::logger::depth--;
-				coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString() << Format::def;
-				coop::logger::out(coop::logger::DONE);
+					coop::logger::depth--;
+					coop::logger::log_stream << "Applying source transformation for " << Format::blue << rec.record->getNameAsString() << Format::def;
+					coop::logger::out(coop::logger::DONE);
+				}
 			}
 
 			coop::src_mod::handle_injection_above_main(

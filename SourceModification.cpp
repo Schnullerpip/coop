@@ -360,7 +360,7 @@ namespace coop{
             std::string field_decl_name = member_decl->getNameAsString();
             std::stringstream ss;
 
-            //make sure that the right access method is called -> inheritance 
+            //make sure that the right access method is called -> inheritance
             ss << field->getParent()->getQualifiedNameAsString() << "::";
 
             //check if the memberExpr's callee is supposed to handle a const instance
@@ -443,7 +443,13 @@ namespace coop{
         void handle_constructors(cold_pod_representation *cpr)
         {
             //create the strings that handle stuff
-            auto record_decl = coop::global<RecordDecl>::get_global(cpr->rec_info->record)->ptr;
+            auto global_rec = coop::global<RecordDecl>::get_global(cpr->rec_info->record);
+            if(!global_rec)
+            {
+                coop::logger::log_stream << "Could NOT find a global instance for " << cpr->rec_info->record->getNameAsString();
+                coop::logger::err();
+            }
+            auto record_decl = global_rec->ptr;
 
             //create the code for general constructors
             std::ifstream ifs(get_src_mod_file_name("constructor_deep_copy_emulation.cpp"));
@@ -463,7 +469,6 @@ namespace coop{
             if(ctors.empty())
             {
                 //there is no ctor -> create one
-                coop::logger::out("no constructors found");
                 cpr->missing_mandatory_public << "\n" << cpr->record_name << "(){" << constructor_code << "}\n";
             }else{
                 for(auto ctor : ctors)
