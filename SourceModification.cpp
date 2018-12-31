@@ -1,5 +1,6 @@
 #include"SourceModification.h"
 #include"clang/AST/DeclCXX.h"
+#include"clang/Lex/Lexer.h"
 #include"coop_utils.hpp"
 #include"data.hpp"
 #include"MatchCallbacks.hpp"
@@ -34,6 +35,7 @@
 #define BYTE_DATA "BYTE_DATA"
 #define SIZE_VARIABLE "SIZE_VARIABLE"
 #define CACHE_LINE_SIZE "CACHE_LINE_SIZE"
+#define CONSTRUCTORS "CONSTRUCTORS"
 
 namespace {
     template<typename T>
@@ -46,7 +48,10 @@ namespace {
         return std::string(src_man.getCharacterData(b),
             src_man.getCharacterData(e)-src_man.getCharacterData(b));
     }
-
+    
+    std::string get_text_(SourceRange &e, ASTContext &ctxt){
+        return Lexer::getSourceText(CharSourceRange::getCharRange(e), ctxt.getSourceManager(), ctxt.getLangOpts());
+    }
 
 
     void replaceAll(std::string &data,const std::string &to_replace,const std::string &replace_with){
@@ -151,12 +156,34 @@ namespace coop{
             rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
         }
 
-        void create_cold_struct_for(
-            coop::record::record_info *ri,
-            cold_pod_representation *cpr,
-            std::string user_include_path)
+        std::string create_constructor(std::string record_name, ASTContext *ctxt, std::vector<CXXCtorInitializer*> &const_field_inis)
         {
-            const RecordDecl* rd = ri->record;
+            std::stringstream signature;
+            std::stringstream body;
+            signature << record_name << "(";
+            body << ":";
+            for(size_t i = 0; i < const_field_inis.size(); ++i)
+            {
+                auto ini = const_field_inis[i];
+                auto member = ini->getMember();
+                auto expr = get_text(ini->getInit(), ctxt);
+
+                signature << member->getType().getAsString() << " val" << i;
+                body << member->getNameAsString() << "(val" << i << ")";
+                if(i < (const_field_inis.size()-1))
+                {
+                    signature << ", ";
+                    body << ", ";
+                }
+            }
+            signature << ")";
+            body << "{}";
+            signature << body.str();
+            return signature.str();
+        }
+
+        void inject_cold_struct(cold_pod_representation *cpr)
+        {
             std::stringstream ss;
             ss << getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "cold_struct_template.cpp";
             std::ifstream ifs(ss.str());
@@ -169,6 +196,75 @@ namespace coop{
             std::string tmpl_file_content(
                 (std::istreambuf_iterator<char>(ifs)),
                 (std::istreambuf_iterator<char>()));
+
+            //assemble all the struct's cold fields
+            {
+                std::vector<const FieldDecl*> in_class_initialized_fields;
+                std::stringstream constructors;
+                for(auto field : cpr->rec_info->cold_fields){
+
+                    //ss << get_text(field, &field->getASTContext());
+                    ss << field->getType().withoutLocalFastQualifiers().getAsString() << " " << field->getNameAsString() << ";\n";
+                    //if(*cpr->rec_info->cold_fields.end() != field){
+                    //    ss << ";\n";
+                    //}
+
+                    if(field->hasInClassInitializer()){
+                        in_class_initialized_fields.push_back(field);
+                    }
+                }
+
+                for(size_t i = 0; i < in_class_initialized_fields.size(); ++i){
+                    const FieldDecl *field = in_class_initialized_fields[i];
+                    constructors << field->getNameAsString() << "("
+                        << get_text(field->getInClassInitializer(), &field->getASTContext()) << ")";
+                    if(i < in_class_initialized_fields.size()-1){
+                        constructors << ", ";
+                    }
+                }
+                replaceAll(tmpl_file_content, FIELD_INITIALIZERS, constructors.str());
+
+                //for(auto ctor : cpr->const_ctors)
+                //{
+                //    auto ctxt = ctor.first;
+                //    auto &inis = ctor.second;
+                //    constructors << create_constructor(cpr->struct_name, ctxt, inis) << "\n";
+                //}
+                //replaceAll(tmpl_file_content, CONSTRUCTORS, constructors.str());
+            }
+
+            replaceAll(tmpl_file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
+
+            replaceAll(tmpl_file_content, STRUCT_NAME, cpr->struct_name);
+            replaceAll(tmpl_file_content, STRUCT_FIELDS, ss.str());
+            ss.str("");
+
+            replaceAll(tmpl_file_content, DATA_NAME, cpr->cold_data_container_name);
+
+            replaceAll(tmpl_file_content, RECORD_NAME, cpr->record_name);
+            replaceAll(tmpl_file_content, RECORD_TYPE, cpr->rec_info->record->isStruct() ? "struct" : "class");
+
+            if(cpr->user_include_path.empty()){
+                replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
+            }else{
+                replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
+            }
+            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
+
+            get_rewriter(cpr->rec_info->record->getASTContext())->
+                InsertTextBefore(cpr->rec_info->record->getSourceRange().getBegin(), tmpl_file_content);
+        }
+
+        void create_cold_struct_for(
+            coop::record::record_info *ri,
+            cold_pod_representation *cpr,
+            std::string user_include_path)
+        {
+            const CXXRecordDecl* rd = ri->record;
+            rd = coop::global<CXXRecordDecl>::get_global(rd)->ptr;
+
+            std::stringstream ss;
 
             //our modification will differ depending on wether the record is defined in a h/hpp or c/cpp file
             //so first determine what it is
@@ -206,56 +302,6 @@ namespace coop{
             cpr->cold_data_ptr_name = ss.str();
             ss.str("");
 
-            //assemble all the struct's cold fields
-            {
-                std::vector<const FieldDecl*> in_class_initialized_fields;
-                std::stringstream initializer;
-                    initializer << ":";
-                for(auto field : ri->cold_fields){
-
-                    ss << get_text(field, &field->getASTContext());
-                    if(*ri->cold_fields.end() != field){
-                        ss << ";\n";
-                    }
-
-                    if(field->hasInClassInitializer()){
-                        in_class_initialized_fields.push_back(field);
-                    }
-                }
-
-                for(size_t i = 0; i < in_class_initialized_fields.size(); ++i){
-                    const FieldDecl *field = in_class_initialized_fields[i];
-                    initializer << field->getNameAsString() << "("
-                        << get_text(field->getInClassInitializer(), &field->getASTContext()) << ")";
-                    if(i < in_class_initialized_fields.size()-1){
-                        initializer << ", ";
-                    }
-                }
-                replaceAll(tmpl_file_content, FIELD_INITIALIZERS, initializer.str());
-
-            }
-
-            replaceAll(tmpl_file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
-
-            replaceAll(tmpl_file_content, STRUCT_NAME, cpr->struct_name);
-            replaceAll(tmpl_file_content, STRUCT_FIELDS, ss.str());
-            ss.str("");
-
-            replaceAll(tmpl_file_content, DATA_NAME, cpr->cold_data_container_name);
-
-            replaceAll(tmpl_file_content, RECORD_NAME, cpr->record_name);
-            replaceAll(tmpl_file_content, RECORD_TYPE, cpr->rec_info->record->isStruct() ? "struct" : "class");
-
-            if(user_include_path.empty()){
-                replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
-            }else{
-                replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
-            }
-            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
-
-            get_rewriter(rd->getASTContext())->
-                InsertTextBefore(rd->getSourceRange().getBegin(), tmpl_file_content);
         }
 
 
@@ -379,9 +425,10 @@ namespace coop{
 
         void handle_operators(cold_pod_representation *cpr)
         {
-            auto record_decl = coop::global<RecordDecl>::get_global(cpr->rec_info->record)->ptr;
+            auto record_decl = coop::global<CXXRecordDecl>::get_global(cpr->rec_info->record)->ptr;
 
             //copy assignment
+            //if we can't have a copy constructor, then don't create one
             auto copy_op = coop::FindCopyAssignmentOperators::rec_copy_assignment_operator_map.find(record_decl);
             if(copy_op == coop::FindCopyAssignmentOperators::rec_copy_assignment_operator_map.end())
             {
@@ -417,8 +464,6 @@ namespace coop{
                     if(t)
                     {
                         auto s = field->getASTContext().getTypeSizeInChars(t).getQuantity();
-                        coop::logger::log_stream << "found " << field->getNameAsString() << " with size: " << s;
-                        coop::logger::out();
 
                         bool is_cold = std::find(cold_fields.begin(), cold_fields.end(), field) != cold_fields.end();
                         semantic << "memcpy(";
@@ -443,7 +488,7 @@ namespace coop{
         void handle_constructors(cold_pod_representation *cpr)
         {
             //create the strings that handle stuff
-            auto global_rec = coop::global<RecordDecl>::get_global(cpr->rec_info->record);
+            auto global_rec = coop::global<CXXRecordDecl>::get_global(cpr->rec_info->record);
             if(!global_rec)
             {
                 coop::logger::log_stream << "Could NOT find a global instance for " << cpr->rec_info->record->getNameAsString();
@@ -465,27 +510,194 @@ namespace coop{
             //else wrap the code to be injected as methods and mark it as missing_mandatory so it is injected later on
 
             //constructor
-            auto ctors = coop::FindConstructor::rec_constructor_map[record_decl];
-            if(ctors.empty())
+            //auto ctors = coop::FindConstructor::rec_constructor_map[record_decl];
+            bool found_normal_ctor = false;
+            auto &ctors = coop::FindConstructor::rec_constructor_map[record_decl];
+            for(auto ctor : ctors)
+            {
+                if(!ctor->isThisDeclarationADefinition() || ctor->isMoveConstructor() || ctor->isImplicit() || !ctor->hasBody() || !ctor->isDefined())
+                {
+                    continue;
+                }
+
+                //we want to make sure that a cold_field struct is generated for each hot data
+                //thats why we inject code here - but we don't want to do this for each constructor!
+                //Because there might be delegating consructors - resulting in redundant cold data generation
+                //make sure we only insert code at the 'root' constructors
+                while(ctor->isDelegatingConstructor())
+                {
+                    ctor = ctor->getTargetConstructor();
+                }
+
+                //multiple construtors might delegate to the same 'root' constructor
+                //make sure to only ever inject code to a ctor ONCE
+                static coop::unique uniques;
+                if(uniques.check(coop::naming::get_decl_id<CXXConstructorDecl>(ctor)))
+                {
+                    continue;
+                }
+
+                //if this constructor (that we know is not a delegating constructor) has initializers, and if those initializers are 
+                //meant for cold fields -> move those initializations into the ctor body
+                //THIS implies having trouble with const members ->
+                //TODO how to handle const members? how to guarantee, that const cold members are initialized, correctly?
+                std::stringstream const_field_initializers;
+
+                std::stringstream cold_field_initializations;
+
+                std::vector<CXXCtorInitializer*> inis;
+                std::vector<CXXCtorInitializer*> const_inis;
+                std::vector<CXXCtorInitializer*> non_cold_inis;
+                int num_ctor_inis = 0;
+                int num_cold_field_inis = 0;
+                const CXXCtorInitializer *first = nullptr;
+                const CXXCtorInitializer *last = nullptr;
+                for(auto ini : ctor->inits())
+                {
+                    if(ini->isBaseInitializer() || !ini->isWritten() || !ini->isAnyMemberInitializer())
+                    {
+                        continue;
+                    }
+
+                    if(ini->getSourceOrder() == 0)
+                    {
+                        first = ini;
+                        if(!last)
+                        {
+                            last = first;
+                        }
+                    }else if(ini->getSourceOrder() >= num_ctor_inis)
+                    {
+                        last = ini;
+                    }
+                    
+                    num_ctor_inis++;
+
+
+                    auto member = ini->getMember();
+                    //make sure to work with the global version
+                    auto g_member = coop::global<FieldDecl>::get_global(member);
+                    if(!g_member)
+                    {
+                        //there is no global version of the field - nothing to do here
+                        continue;
+                    }
+                    
+                    //check if the initializer refers to a cold filed
+                    auto &cold_fields = cpr->rec_info->cold_fields;
+                    auto iter = std::find(cold_fields.begin(), cold_fields.end(), g_member->ptr);
+                    if(iter == cold_fields.end())
+                    {
+                        non_cold_inis.push_back(ini);
+                        continue;
+                    }
+
+                    num_cold_field_inis++;
+
+                    inis.push_back(ini);
+
+                    ////depending whether or not the initialized field is const we need to treat them differently
+                    //if(member->getType().isConstQualified())
+                    //{
+                    //    const_inis.push_back(ini);
+                    //}else{
+                    //    inis.push_back(ini);
+                    //}
+                }
+
+                auto rewriter = get_rewriter(&ctor->getASTContext());
+
+                if(num_ctor_inis != static_cast<int>(non_cold_inis.size()))
+                {
+                    //there are cold field initializations in this ctor
+                    //assemble a new ctor code, that excludes those cold field initializations
+                    std::stringstream new_initializers;
+                    new_initializers << "";
+                    for(size_t i = 0; i < non_cold_inis.size(); ++i)
+                    {
+                        CXXCtorInitializer *ini = non_cold_inis[i];
+                        auto member = ini->getMember();
+                        auto src_rng = ini->getSourceRange();
+                        std::string txt = get_text_(src_rng, ctor->getASTContext());
+                        txt = coop::naming::get_from_start_until(txt.c_str(), '(');
+                        new_initializers << member->getNameAsString() << "(" << txt << ")";
+                        if(i < (non_cold_inis.size()-1))
+                        {
+                            new_initializers << ", ";
+                        }
+                        coop::logger::out(new_initializers.str().c_str());
+                    }
+
+                    //if there are no ctor initializers left (they were all cold fields) make sure to also remove the :
+                    SourceLocation from = first->getSourceLocation();
+                    size_t until = last->getSourceRange().getEnd().getRawEncoding()-first->getSourceLocation().getRawEncoding()+1;
+                    if(num_cold_field_inis == num_ctor_inis)
+                    {
+                        from = from.getLocWithOffset(-1);
+                        ++until;
+                    }
+
+                    rewriter->ReplaceText(from, until, new_initializers.str());
+                }
+
+                //if(!const_inis.empty())
+                //{
+                //    //make sure that a respective constructor for those const cold fields is made
+                //    cpr->const_ctors.push_back({&ctor->getASTContext(), const_inis});
+
+                //    //make sure that this constructor calls the appropriate cold_struct ctor
+                //    for(size_t i = 0; i < const_inis.size(); ++i)
+                //    {
+                //        auto ini = const_inis[i];
+
+                //        const_field_initializers << get_text(ini->getInit(), &ctor->getASTContext());
+                //        if(i < const_inis.size()-1)
+                //        {
+                //            const_field_initializers << ", ";
+                //        }
+                //    }
+                //}
+
+
+                //if there were cold field initializations removed - move them to the ctor body!
+                if(!inis.empty())
+                {
+                    //append those initializations to the code that will be injected
+                    for(auto ini : inis)
+                    {
+                        auto member = ini->getMember();
+                        auto src_rng = ini->getSourceRange();
+                        std::string txt = get_text_(src_rng, ctor->getASTContext());
+                        txt = coop::naming::get_from_start_until(txt.c_str(), '(');
+                        cold_field_initializations << "\n" << coop_safe_struct_access_method_name << "->" << member->getNameAsString() << " = " << txt << ";";
+
+                    }
+                }
+
+
+                //inject the code to the existing ctor
+                //get the ctors location
+                found_normal_ctor = true;
+                replaceAll(constructor_code, FIELD_INITIALIZERS, const_field_initializers.str());
+                std::stringstream code_injection;
+                code_injection << constructor_code;
+                code_injection << cold_field_initializations.str();
+                auto r = get_rewriter(ctor->getASTContext());
+                r->InsertTextAfterToken(ctor->getBody()->getLocStart(), code_injection.str());
+            }
+
+            if(!found_normal_ctor)
             {
                 //there is no ctor -> create one
                 cpr->missing_mandatory_public << "\n" << cpr->record_name << "(){" << constructor_code << "}\n";
-            }else{
-                for(auto ctor : ctors)
-                {
-                    //inject the code to the existing ctor
-                    //get the ctors location
-                    auto r = get_rewriter(ctor->getASTContext());
-                    r->InsertTextAfterToken(ctor->getBody()->getLocStart(), constructor_code);
-                }
             }
 
             //create the code for copy constructors
             /*if the copy ctor is implicit, then we must now make sure, that not the cold_data_ptr is copied (implicitly)
             but rather ALL fields cold and hot - so we emulate a deep copy and temporary copies of objects don't trigger
             the cold data instances to be destructed*/
-            auto copy_ctor = coop::FindConstructor::rec_copy_constructor_map.find(record_decl);
-            if(copy_ctor == coop::FindConstructor::rec_copy_constructor_map.end())
+            auto cp_ctors = coop::FindConstructor::rec_copy_constructor_map[record_decl];
+            if(cp_ctors.empty())
             {
                 //there is no definition of a copy constructor - so we make one
                 ifs = std::ifstream (get_src_mod_file_name("existing_copy_constructor_deep_copy_emulation.cpp"));
@@ -498,7 +710,6 @@ namespace coop{
                 replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
                 cpr->missing_mandatory_public << copy_constructor_code;
             }
-
         }
 
         void handle_free_list_fragmentation(cold_pod_representation *cpr)
@@ -516,7 +727,6 @@ namespace coop{
                << ".free("<< cpr->cold_data_ptr_name <<");";
 
             if(dtor_decl){
-                coop::logger::out("found dtor_decl");
                 const Stmt *dtor_body = cpr->rec_info->destructor_ptr->getBody();
                 if(dtor_body && dtor_decl->isUserProvided()){
                     //insert the relevant code to the existing constructor
@@ -524,12 +734,12 @@ namespace coop{
                     rewriter->InsertTextBefore(dtor_body->getLocEnd(), free_stmt.str());
                 }else{
                     //has no destructor body
-                    const RecordDecl* record_decl = cpr->rec_info->record;
+                    const CXXRecordDecl* record_decl = cpr->rec_info->record;
                     //now we can't even be sure that the rewriter fits the ast - multiple definitions can exist, since there are multiple ASTs all containing the same headers
                     rewriter = get_rewriter(record_decl->getASTContext());
 
                     //make sure to only work with the global instances
-                    auto global_rec = coop::global<RecordDecl>::get_global(record_decl);
+                    auto global_rec = coop::global<CXXRecordDecl>::get_global(record_decl);
                     if(!global_rec)
                     {
                         coop::logger::log_stream << "found no global node for: " << record_decl->getNameAsString();

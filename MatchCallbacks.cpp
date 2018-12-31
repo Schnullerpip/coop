@@ -6,17 +6,17 @@
 #include"data.hpp"
 
 //static variables
-std::map<const RecordDecl*, std::set<const FieldDecl*>>
+std::map<const CXXRecordDecl*, std::set<const FieldDecl*>>
     coop::MemberRegistrationCallback::class_fields_map = {};
 
-std::map<const RecordDecl*, std::string>
+std::map<const CXXRecordDecl*, std::string>
     coop::MemberRegistrationCallback::class_file_map = {};
 
 
-std::map<const RecordDecl*, std::set<const AccessSpecDecl*>>
+std::map<const CXXRecordDecl*, std::set<const AccessSpecDecl*>>
     coop::AccessSpecCallback::record_public_access_map = {};
 
-std::map<const RecordDecl*, std::set<const AccessSpecDecl*>>
+std::map<const CXXRecordDecl*, std::set<const AccessSpecDecl*>>
     coop::AccessSpecCallback::record_private_access_map = {};
 
 std::set<std::pair<const FunctionDecl*, std::string>>
@@ -42,23 +42,23 @@ std::map<const FunctionDecl*, int>
 std::map<const FieldDecl*, std::vector<coop::ColdFieldCallback::memExpr_ASTcon>>
     coop::ColdFieldCallback::cold_field_occurances = {};
 
-std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>>
+std::map<const CXXRecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>>
     coop::FindInstantiations::instantiations_map = {};
 
-std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>>
+std::map<const CXXRecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>>
     coop::FindDeleteCalls::delete_calls_map = {};
 
-std::map<const RecordDecl*, const CXXMethodDecl*>
+std::map<const CXXRecordDecl*, const CXXMethodDecl*>
     coop::FindCopyAssignmentOperators::rec_copy_assignment_operator_map;
 
-std::map<const RecordDecl*, const CXXMethodDecl*>
+std::map<const CXXRecordDecl*, const CXXMethodDecl*>
     coop::FindMoveAssignmentOperators::rec_move_assignment_operator_map;
 
-std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
+std::map<const CXXRecordDecl*, std::vector<const CXXConstructorDecl*>>
     coop::FindConstructor::rec_constructor_map;
-std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
+std::map<const CXXRecordDecl*, std::vector<const CXXConstructorDecl*>>
     coop::FindConstructor::rec_copy_constructor_map;
-std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>>
+std::map<const CXXRecordDecl*, std::vector<const CXXConstructorDecl*>>
     coop::FindConstructor::rec_move_constructor_map;
 
 //function implementations
@@ -108,9 +108,9 @@ void coop::MemberRegistrationCallback::printData(){
 }
 
 void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &result){
-    const RecordDecl *rd = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
-    std::string rd_id = coop::naming::get_decl_id<RecordDecl>(rd);
-    ptr_ID<RecordDecl> * global = coop::global<RecordDecl>::get_global(rd_id);
+    const CXXRecordDecl *rd = result.Nodes.getNodeAs<CXXRecordDecl>(coop_class_s);
+    std::string rd_id = coop::naming::get_decl_id<CXXRecordDecl>(rd);
+    ptr_ID<CXXRecordDecl> * global = coop::global<CXXRecordDecl>::get_global(rd_id);
 
     if(global){
         //we already found this record declaration - do nothing
@@ -121,7 +121,7 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
         }
         return;
     }else{
-        coop::global<RecordDecl>::set_global(rd, rd_id);
+        coop::global<CXXRecordDecl>::set_global(rd, rd_id);
     }
 
     std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str();
@@ -148,11 +148,11 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
 
 void coop::AccessSpecCallback::run(const MatchFinder::MatchResult &result)
 {
-    const RecordDecl *record_decl = result.Nodes.getNodeAs<RecordDecl>(coop_class_s);
+    const CXXRecordDecl *record_decl = result.Nodes.getNodeAs<CXXRecordDecl>(coop_class_s);
     const AccessSpecDecl *acc_decl = result.Nodes.getNodeAs<AccessSpecDecl>(coop_access_s);
 
     //make sure only to work with the global instances
-    auto global_rec = coop::global<RecordDecl>::use(record_decl);
+    auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
     record_decl = global_rec->ptr;
 
     if(record_decl)
@@ -539,7 +539,7 @@ void coop::FindDestructor::run(const MatchFinder::MatchResult &result){
     }
 }
 
-void coop::FindInstantiations::add_record(const RecordDecl *p)
+void coop::FindInstantiations::add_record(const CXXRecordDecl *p)
 {
     records_to_instantiate.push_back(p);
 }
@@ -547,10 +547,10 @@ void coop::FindInstantiations::add_record(const RecordDecl *p)
 void coop::FindInstantiations::run(const MatchFinder::MatchResult &result){
     const CXXNewExpr* new_expr = result.Nodes.getNodeAs<CXXNewExpr>(coop_new_instantiation_s);
     if(new_expr && !new_expr->isArray() && (new_expr->placement_arg_begin() == new_expr->placement_arg_end())){
-        const RecordDecl *record = new_expr->getAllocatedType().getTypePtr()->getAsCXXRecordDecl();
+        const CXXRecordDecl *record = new_expr->getAllocatedType().getTypePtr()->getAsCXXRecordDecl();
 
         //make sure only to work with the global instances
-        auto global_rec = coop::global<RecordDecl>::use(record);
+        auto global_rec = coop::global<CXXRecordDecl>::use(record);
         record = global_rec->ptr;
 
         //get the new record Type's name
@@ -565,7 +565,7 @@ void coop::FindInstantiations::run(const MatchFinder::MatchResult &result){
     }
 }
 
-void coop::FindDeleteCalls::add_record(const RecordDecl *rd)
+void coop::FindDeleteCalls::add_record(const CXXRecordDecl *rd)
 {
     record_deletions_to_find.push_back(rd);
 }
@@ -577,7 +577,7 @@ void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
     if(!delete_call->isArrayForm()){
 
         const clang::Type *destroyed_type = delete_call->getDestroyedType().getTypePtr();
-        const RecordDecl *record_decl = destroyed_type->getAsCXXRecordDecl();
+        const CXXRecordDecl *record_decl = destroyed_type->getAsCXXRecordDecl();
 
         if(!record_decl)
         {
@@ -586,7 +586,7 @@ void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
         }
 
         //make sure only to work with the global instances
-        auto global_rec = coop::global<RecordDecl>::use(record_decl);
+        auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
         record_decl = global_rec->ptr;
 
         if(record_decl){
@@ -600,7 +600,7 @@ void coop::FindDeleteCalls::run(const MatchFinder::MatchResult &result){
 }
 
 /*FindConstructor*/
-void coop::FindConstructor::add_record(const RecordDecl *rd)
+void coop::FindConstructor::add_record(const CXXRecordDecl *rd)
 {
     records_to_find.push_back(rd);
 }
@@ -623,19 +623,18 @@ void coop::FindConstructor::run(const MatchFinder::MatchResult &result){
     }
     
 
-    const RecordDecl *record_decl = constructor->getParent();
+    const CXXRecordDecl *record_decl = constructor->getParent();
     if(record_decl){
 
         //make sure to only use global instances 
-        auto global_rec = coop::global<RecordDecl>::use(record_decl);
+        auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
         record_decl = global_rec->ptr;
 
         //coop::logger::log_stream << "found constructor for " << record_decl->getNameAsString() << "\n" << get_text(constructor, result.Context);
         //coop::logger::out();
 
         //register copy constructors
-        auto iter = rec_copy_constructor_map.find(record_decl);
-        if(constructor->isCopyConstructor() && (iter == rec_copy_constructor_map.end()))
+        if(constructor->isCopyConstructor())
         {
             auto &consts = rec_copy_constructor_map[record_decl];
             consts.push_back(constructor);
@@ -643,8 +642,7 @@ void coop::FindConstructor::run(const MatchFinder::MatchResult &result){
         }
         
         //register move constructors
-        iter = rec_move_constructor_map.find(record_decl);
-        if(constructor->isMoveConstructor() && (iter == rec_move_constructor_map.end()))
+        if(constructor->isMoveConstructor())
         {
             auto &consts = rec_move_constructor_map[record_decl];
             consts.push_back(constructor);
@@ -652,17 +650,12 @@ void coop::FindConstructor::run(const MatchFinder::MatchResult &result){
         }
 
         //register other constructors
-        iter = rec_constructor_map.find(record_decl);
-        if(iter == rec_constructor_map.end())
-        {
-            auto &consts = rec_constructor_map[record_decl];
-            consts.push_back(constructor);
-            return;
-        }
+        auto &consts = rec_constructor_map[record_decl];
+        consts.push_back(constructor);
     }
 }
 /*FindCopyAssignmentOperators*/
-void coop::FindCopyAssignmentOperators::add_record(const RecordDecl *rd)
+void coop::FindCopyAssignmentOperators::add_record(const CXXRecordDecl *rd)
 {
     records_to_find.push_back(rd);
 }
@@ -671,11 +664,11 @@ void coop::FindCopyAssignmentOperators::run(const MatchFinder::MatchResult &resu
     const CXXMethodDecl *copy_assignment_operator = result.Nodes.getNodeAs<CXXMethodDecl>(coop_function_s);
 
     if(copy_assignment_operator->isCopyAssignmentOperator()){
-        const RecordDecl *record_decl = copy_assignment_operator->getParent();
+        const CXXRecordDecl *record_decl = copy_assignment_operator->getParent();
         if(record_decl){
 
             //make sure to only use global instances 
-            auto global_rec = coop::global<RecordDecl>::use(record_decl);
+            auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
             record_decl = global_rec->ptr;
 
             coop::logger::log_stream << "found copy operator for " << record_decl->getNameAsString() << "\n" << get_text(copy_assignment_operator, result.Context);
@@ -692,7 +685,7 @@ void coop::FindCopyAssignmentOperators::run(const MatchFinder::MatchResult &resu
 }
 
 /*FindMoveAssignmentOperators*/
-void coop::FindMoveAssignmentOperators::add_record(const RecordDecl *rd)
+void coop::FindMoveAssignmentOperators::add_record(const CXXRecordDecl *rd)
 {
     records_to_find.push_back(rd);
 }
@@ -701,11 +694,11 @@ void coop::FindMoveAssignmentOperators::run(const MatchFinder::MatchResult &resu
     const CXXMethodDecl *move_assignment_operator = result.Nodes.getNodeAs<CXXMethodDecl>(coop_function_s);
 
     if(move_assignment_operator->isMoveAssignmentOperator()){
-        const RecordDecl *record_decl = move_assignment_operator->getParent();
+        const CXXRecordDecl *record_decl = move_assignment_operator->getParent();
         if(record_decl){
 
             //make sure to only use global instances 
-            auto global_rec = coop::global<RecordDecl>::use(record_decl);
+            auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
             record_decl = global_rec->ptr;
 
             coop::logger::log_stream << "found move operator for " << record_decl->getNameAsString() << "\n" << get_text(move_assignment_operator, result.Context);

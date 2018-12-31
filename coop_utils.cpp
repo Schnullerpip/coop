@@ -17,7 +17,7 @@ std::string coop::getEnvVar( std::string const & key )
 }
 
 void coop::record::record_info::init(
-    const clang::RecordDecl* class_struct,
+    const clang::CXXRecordDecl* class_struct,
     std::set<const clang::FieldDecl*> *field_vector,
     std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
     std::map<const Stmt*, loop_credentials> *rlvnt_loops)

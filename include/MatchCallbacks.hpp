@@ -26,8 +26,8 @@ namespace coop {
     //matchcallback that registeres members of classes for later usage
     class MemberRegistrationCallback : public coop::CoopMatchCallback {
     public:
-        static std::map<const RecordDecl*, std::set<const FieldDecl*>> class_fields_map;
-        static std::map<const RecordDecl*, std::string> class_file_map;
+        static std::map<const CXXRecordDecl*, std::set<const FieldDecl*>> class_fields_map;
+        static std::map<const CXXRecordDecl*, std::string> class_file_map;
 
         void printData();
 
@@ -39,8 +39,8 @@ namespace coop {
     class AccessSpecCallback : public MatchFinder::MatchCallback
     {
     public:
-        static std::map<const RecordDecl*, std::set<const AccessSpecDecl*>> record_public_access_map;
-        static std::map<const RecordDecl*, std::set<const AccessSpecDecl*>> record_private_access_map;
+        static std::map<const CXXRecordDecl*, std::set<const AccessSpecDecl*>> record_public_access_map;
+        static std::map<const CXXRecordDecl*, std::set<const AccessSpecDecl*>> record_private_access_map;
     private:
         virtual void run(const MatchFinder::MatchResult &result);
     };
@@ -169,12 +169,12 @@ namespace coop {
     /*will register all constructors for the records_to_find*/
     class FindConstructor : public MatchFinder::MatchCallback {
     public:
-        static std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>> rec_constructor_map;
-        static std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>> rec_copy_constructor_map;
-        static std::map<const RecordDecl*, std::vector<const CXXConstructorDecl*>> rec_move_constructor_map;
-        void add_record(const RecordDecl* r);
+        static std::map<const CXXRecordDecl*, std::vector<const CXXConstructorDecl*>> rec_constructor_map;
+        static std::map<const CXXRecordDecl*, std::vector<const CXXConstructorDecl*>> rec_copy_constructor_map;
+        static std::map<const CXXRecordDecl*, std::vector<const CXXConstructorDecl*>> rec_move_constructor_map;
+        void add_record(const CXXRecordDecl* r);
     private:
-        std::vector<const RecordDecl*> records_to_find;
+        std::vector<const CXXRecordDecl*> records_to_find;
         void run(const MatchFinder::MatchResult &result);
     };
 
@@ -182,10 +182,10 @@ namespace coop {
     class FindCopyAssignmentOperators : public MatchFinder::MatchCallback
     {
     public:
-        static std::map<const RecordDecl*, const CXXMethodDecl*> rec_copy_assignment_operator_map;
-        void add_record(const RecordDecl* r);
+        static std::map<const CXXRecordDecl*, const CXXMethodDecl*> rec_copy_assignment_operator_map;
+        void add_record(const CXXRecordDecl* r);
     private:
-        std::vector<const RecordDecl*> records_to_find;
+        std::vector<const CXXRecordDecl*> records_to_find;
         void run(const MatchFinder::MatchResult &result);
     };
 
@@ -193,20 +193,20 @@ namespace coop {
     class FindMoveAssignmentOperators : public MatchFinder::MatchCallback
     {
     public:
-        static std::map<const RecordDecl*, const CXXMethodDecl*> rec_move_assignment_operator_map;
-        void add_record(const RecordDecl* r);
+        static std::map<const CXXRecordDecl*, const CXXMethodDecl*> rec_move_assignment_operator_map;
+        void add_record(const CXXRecordDecl* r);
     private:
-        std::vector<const RecordDecl*> records_to_find;
+        std::vector<const CXXRecordDecl*> records_to_find;
         void run(const MatchFinder::MatchResult &result);
     };
 
     /*will register new calls */
     class FindInstantiations : public MatchFinder::MatchCallback {
     public:
-        static std::map<const RecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>> instantiations_map;
+        static std::map<const CXXRecordDecl*, std::vector<std::pair<const CXXNewExpr*, ASTContext*>>> instantiations_map;
 
-        std::vector<const RecordDecl*> records_to_instantiate;
-        void add_record(const RecordDecl* r);
+        std::vector<const CXXRecordDecl*> records_to_instantiate;
+        void add_record(const CXXRecordDecl* r);
     private:
         void run(const MatchFinder::MatchResult &result);
     };
@@ -214,9 +214,9 @@ namespace coop {
     /*will register delete calls */
     class FindDeleteCalls : public MatchFinder::MatchCallback {
     public:
-        static std::map<const RecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>> delete_calls_map;
-        std::vector<const RecordDecl*> record_deletions_to_find;
-        void add_record(const RecordDecl* r);
+        static std::map<const CXXRecordDecl*, std::vector<std::pair<const CXXDeleteExpr*, ASTContext*>>> delete_calls_map;
+        std::vector<const CXXRecordDecl*> record_deletions_to_find;
+        void add_record(const CXXRecordDecl* r);
     private:
         void run(const MatchFinder::MatchResult &result);
     };

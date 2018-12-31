@@ -123,7 +123,7 @@ namespace coop{
           can easily access more data depending on what is needed*/
         struct record_info {
             void init(
-                const clang::RecordDecl* class_struct,
+                const clang::CXXRecordDecl* class_struct,
                 std::set<const clang::FieldDecl*> *field_vector,
                 std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
                 std::map<const Stmt*, loop_credentials> *rlvnt_loops);
@@ -135,7 +135,7 @@ namespace coop{
 
 
             //reference to the record node (class/struct) that is referred to by this struct
-            const clang::RecordDecl
+            const clang::CXXRecordDecl
                 *record;
             //reference to all the member nodes that the referred record has
             std::set<const clang::FieldDecl*>

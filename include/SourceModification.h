@@ -47,6 +47,11 @@ namespace coop {
 
             coop::record::record_info *rec_info = nullptr;
 
+            //each vector inside const_ctors represents a constructor, that initializes const cold fields
+            //each of those vectors needs to be implemented as a constructor in the cold data struct, initializing those fields
+            std::vector<std::pair<ASTContext *, std::vector<CXXCtorInitializer*>>>
+                const_ctors;
+
             //this stringstream will collect all mandatory commands that will be added to a record, if the record doesn't have the respective methods (ctor/dtor...)
             std::stringstream missing_mandatory_public;
             std::stringstream missing_mandatory_private;
@@ -94,6 +99,10 @@ namespace coop {
         );
 
         void handle_constructors(
+            cold_pod_representation *cpr
+        );
+
+        void inject_cold_struct(
             cold_pod_representation *cpr
         );
 

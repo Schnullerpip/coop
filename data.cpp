@@ -12,7 +12,7 @@ void recursive_relevance_check(coop::fl_node *n, std::vector<coop::fl_node*> nod
 
 
 namespace coop{
-    global<RecordDecl> g_records;
+    global<CXXRecordDecl> g_records;
     global<FieldDecl> g_fields;
     global<FunctionDecl> g_functions;
     global<MemberExpr> g_memExprs;

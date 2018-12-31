@@ -666,7 +666,6 @@ int main(int argc, const char **argv) {
 					cpr.qualifier = coop::naming::get_without(cpr.qualified_record_name, cpr.record_name.c_str());
 
 					//create a struct that holds all the field-declarations for the cold fields
-					coop::logger::out("injecting cold struct definitions");
 					coop::src_mod::create_cold_struct_for(
 						&rec,
 						&cpr,
@@ -715,6 +714,9 @@ int main(int argc, const char **argv) {
 					//modify/create the record's constructors
 					coop::logger::out("modifying/creating constructors");
 					coop::src_mod::handle_constructors(&cpr);
+
+					coop::logger::out("injecting cold struct definitions");
+					coop::src_mod::inject_cold_struct(&cpr);
 					
 					//modify/create the record's destructor, to handle free-list fragmentation
 					coop::logger::out("modifying/creating destructor");
@@ -851,11 +853,11 @@ void create_member_matrices( coop::record::record_info *record_stats)
 	int rec_count = 0;
 	for(auto class_fields_map : coop::MemberRegistrationCallback::class_fields_map){
 
-		const RecordDecl *rec = class_fields_map.first;
+		const CXXRecordDecl *rec = class_fields_map.first;
 		const auto fields = &class_fields_map.second;
 
 		//make sure to only work with the global instances
-		auto global_rec = coop::global<RecordDecl>::get_global(rec);
+		auto global_rec = coop::global<CXXRecordDecl>::get_global(rec);
 		if(!global_rec)
 		{
 			//there is no global record!?...
