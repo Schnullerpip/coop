@@ -53,6 +53,7 @@ namespace coop {
                 const_ctors;
 
             //this stringstream will collect all mandatory commands that will be added to a record, if the record doesn't have the respective methods (ctor/dtor...)
+            std::stringstream addition_for_existing_destructor;
             std::stringstream missing_mandatory_public;
             std::stringstream missing_mandatory_private;
         };

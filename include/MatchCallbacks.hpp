@@ -101,10 +101,10 @@ namespace coop {
     };
 
 
-    /*
-        Will cache all members used in loops and the loops respectively, so they can later be used
-        to deduce a heuristic considering member usage
-    */
+   /*
+       Will cache all members used in loops and the loops respectively, so they can later be used
+       to deduce a heuristic considering member usage
+   */
    class LoopMemberUsageCallback : public coop::CoopMatchCallback {
    public:
         //will hold all the member-references that are made inside loops

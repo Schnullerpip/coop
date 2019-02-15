@@ -50,7 +50,7 @@ public:
     T * free_ptr = nullptr;
 	coop_free_list(char * byte_data, char *data_end, size_t alignment)
     {
-		assert("data_end can't be smaller than byte_data" && data_end > byte_data);
+		assert("data_end can't be smaller than byte_data" && (data_end > byte_data));
 		
 		union {
 			char * as_char_ptr;

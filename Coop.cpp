@@ -234,7 +234,7 @@ int main(int argc, const char **argv) {
 		//create a matcher that filters only the user files - so we dont end up making changes in system headers
 		auto file_match = isExpansionInFileMatching(file_match_string);
 
-        DeclarationMatcher classes = cxxRecordDecl(file_match, hasDefinition(), unless(isUnion())).bind(coop_class_s);
+        DeclarationMatcher classes = cxxRecordDecl(file_match, hasDefinition(), unless(anyOf(isUnion(), isImplicit()))).bind(coop_class_s);
 		DeclarationMatcher members = fieldDecl(file_match, hasAncestor(cxxRecordDecl(hasDefinition(), anyOf(isClass(), isStruct())).bind(coop_class_s))).bind(coop_member_s);
 		DeclarationMatcher function_prototypes = functionDecl(file_match, unless(isDefinition())).bind(coop_function_s);
 		StatementMatcher members_used_in_functions = memberExpr(file_match, hasAncestor(functionDecl(isDefinition()).bind(coop_function_s))).bind(coop_member_s);
@@ -935,7 +935,7 @@ void create_member_matrices( coop::record::record_info *record_stats)
 							float &field_weight = rec_ref.loop_mem.at(i, loop_idx);
 							if(field_weight > 0)
 							{
-								field_weight += number_member_associations;
+								field_weight += rec_ref.fields.size() - number_member_associations;
 							}
 						}
 					}
@@ -947,7 +947,7 @@ void create_member_matrices( coop::record::record_info *record_stats)
 				}
 			}
 
-			//go through each function and apply its depth to the rec_refs members, if the functin is recursive, because in this case we treat it as a loop
+			//go through each function and apply its depth to the rec_refs members if the functin is recursive, because in this case we treat it as a loop
 			for(auto &func_mems : *rec_ref.relevant_functions)
 			{
 				const FunctionDecl *func_ptr = func_mems.first;

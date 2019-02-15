@@ -151,8 +151,8 @@ namespace coop{
         void remove_decl(const FieldDecl *fd){
             Rewriter *rewriter = get_rewriter(fd->getASTContext());
 
-            rewriter->setSourceMgr(fd->getASTContext().getSourceManager(), fd->getASTContext().getLangOpts());
             auto src_range = fd->getSourceRange();
+
             rewriter->RemoveText(src_range.getBegin(), rewriter->getRangeSize(src_range)+1); //the plus 1 gets rid of the semicolon
         }
 
@@ -716,8 +716,6 @@ namespace coop{
         {
             const CXXDestructorDecl *dtor_decl = cpr->rec_info->destructor_ptr;
 
-            Rewriter *rewriter = get_rewriter(dtor_decl->getASTContext());
-
             //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
             std::stringstream free_stmt;
             free_stmt
@@ -730,13 +728,12 @@ namespace coop{
                 const Stmt *dtor_body = cpr->rec_info->destructor_ptr->getBody();
                 if(dtor_body && dtor_decl->isUserProvided()){
                     //insert the relevant code to the existing constructor
-                    rewriter->InsertTextBefore(dtor_body->getLocEnd(), "\n");
-                    rewriter->InsertTextBefore(dtor_body->getLocEnd(), free_stmt.str());
+                    //rewriter->InsertTextBefore(dtor_body->getLocEnd(), "\n");
+                    //rewriter->InsertTextBefore(dtor_body->getLocEnd(), free_stmt.str());
+                    cpr->addition_for_existing_destructor << "\n" << free_stmt.str();
                 }else{
                     //has no destructor body
                     const CXXRecordDecl* record_decl = cpr->rec_info->record;
-                    //now we can't even be sure that the rewriter fits the ast - multiple definitions can exist, since there are multiple ASTs all containing the same headers
-                    rewriter = get_rewriter(record_decl->getASTContext());
 
                     //make sure to only work with the global instances
                     auto global_rec = coop::global<CXXRecordDecl>::get_global(record_decl);
@@ -868,6 +865,17 @@ namespace coop{
             ss << "\npublic:\n" << cpr->missing_mandatory_public.str();
 
             r->InsertTextBefore(rec->getLocEnd(), ss.str());
+
+            //if a destructor exists - manually add the respective code to it
+            if(auto dtor = rec->getDestructor())
+            {
+                auto dtor_body = dtor->getBody();
+                if(dtor_body && dtor->isUserProvided())
+                {
+                    //insert the relevant code to the existing constructor
+                    r->InsertTextBefore(dtor_body->getLocEnd(), cpr->addition_for_existing_destructor.str());
+                }
+            }
         }
 
         void handle_injection_above_main(
