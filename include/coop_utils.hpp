@@ -219,10 +219,21 @@ namespace coop{
             }
         };
     }
+}
 
+struct SGroup
+{
+    SGroup(unsigned int start, unsigned int end):start_idx(start), end_idx(end){}
+    void print();
 
+    unsigned int start_idx = 0, end_idx = 0;
+    unsigned int type_size = 0;
+    float highest_field_weight = 0;
+    SGroup *next = nullptr, *prev=nullptr;
+};
 
-
+namespace coop{
+    SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned int number_elements);
 }
 
 #endif

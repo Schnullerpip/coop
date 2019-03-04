@@ -132,6 +132,17 @@ namespace coop{
 		}
     }
 
+    void AST_abbreviation::print_parents(fl_node *fln)
+    {
+        coop::logger::log_stream << fln->ID() << ":";
+        coop::logger::out()++;
+        for(auto node : fln->parents)
+        {
+            print_parents(node);
+        }
+        coop::logger::depth--;
+    }
+
 
     void fl_node::insert_child(fl_node *child)
     {
@@ -237,6 +248,7 @@ void recursiveMemberUsageAttribution(coop::fl_node *node, std::set<coop::fl_node
     }
 
     //for each parent, make sure they are attributed, to the members they associate indirectly through this child
+    if(member_usages_child)
     for(auto parent : node->parents)
     {
         if(node->isFunc() && parent != node){

@@ -182,9 +182,6 @@ void coop::FunctionPrototypeRegistrationCallback::run(const MatchFinder::MatchRe
     //make sure to match only those prototypes, that we can find a definition for
     if(!func){return;}
 
-    //coop::logger::log_stream << "found function prototype: " << proto->getNameAsString();
-    //coop::logger::out();
-
     static coop::unique ids;
     std::string id = coop::naming::get_decl_id<FunctionDecl>(proto);
     if(ids.check(id)){
@@ -447,6 +444,9 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
     const MemberExpr *member = result.Nodes.getNodeAs<MemberExpr>(coop_member_s);
     Stmt const *loop_stmt;
     bool isForLoop = true;
+
+    //coop::logger::log_stream << "FOUND loop using: " << coop::naming::get_stmt_id<MemberExpr>(member, result.SourceManager);
+    //coop::logger::out();
 
     //prevent redundant memberUsage registration (due to multiple includes of the same h/hpp file)
     static coop::unique member_ids;

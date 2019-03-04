@@ -35,7 +35,6 @@ constexpr size_t size_plus_alignments()
 
 }//namespace coop_cex
 
-
 template<typename T>
 class coop_free_list
 {
@@ -46,25 +45,38 @@ class coop_free_list
 		char **_char_ptr_ptr;
 	};
 
-public:
     T * free_ptr = nullptr;
+public:
 	coop_free_list(char * byte_data, char *data_end, size_t alignment)
     {
-		assert("data_end can't be smaller than byte_data" && (data_end > byte_data));
+
+		assert("data_end can't be smaller than byte_data" && data_end > byte_data);
 		
 		union {
 			char * as_char_ptr;
 			T * as_data_ptr;
 		};
 
-		//so the first element will also be aligned 
+		size_t size = (data_end - byte_data);
+
+		//so the first element will be aligned 
 		as_char_ptr = align(byte_data, alignment, true);
 
+		//how many elements fit in a line aka after how many do we need a new alignment offset
+		size_t Ts_per_chunk = alignment/sizeof(T);
+		Ts_per_chunk = (Ts_per_chunk == 0 ? 1 : Ts_per_chunk);
+
+		size_t padding_to_next = alignment - sizeof(T)*Ts_per_chunk;
+
+		size /= sizeof(T);
 		free_ptr = as_data_ptr;
 
+		size_t Ts = 0;
 		for(_ptr = free_ptr; _char_ptr < data_end; _ptr = *_next)
 		{
-			char * next = align(_char_ptr+sizeof(T), alignment, true);
+			if(++Ts > Ts_per_chunk)
+				Ts = 1;
+			char * next = _char_ptr+sizeof(T)+(Ts == Ts_per_chunk ? padding_to_next : 0);
 			if(next >= data_end)
 			{
 				*_next = nullptr;
@@ -75,7 +87,7 @@ public:
 	}
 
 	T * get()
-    {
+	{
 		assert(free_ptr && "coop free list instance was initialized with too little memory space - change default settings in coop_config.txt");
 		_ptr = free_ptr;
 		T *ret = _ptr;
@@ -84,7 +96,7 @@ public:
 	}
 
 	void free(T *p)
-    {
+	{
 		//assert((union_cast<uintptr_t>(p) >= union_cast<uintptr_t>(byte_data)
 		//	&& union_cast<uintptr_t>(p) < union_cast<uintptr_t>(union_cast<char*>(byte_data)+size*sizeof(T)))
 		//	&& "coop free list will not act outside of its bounds!");

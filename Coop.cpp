@@ -71,6 +71,8 @@ void fill_loop_member_matrix(
 
 float field_weight_depth_factor_g = coop_field_weight_depth_factor_f;
 
+coop::system::cache_credentials l1;
+
 //main start
 int main(int argc, const char **argv) {
 		//register the tool's options
@@ -154,7 +156,6 @@ int main(int argc, const char **argv) {
 
 		coop::logger::out("retreiving system information", coop::logger::RUNNING)++;
 
-			coop::system::cache_credentials l1;
 			l1 = coop::system::get_d_cache_info(coop::system::IDX_0);
 			coop::logger::log_stream
 				<< "cache lvl: " << l1.lvl
@@ -362,34 +363,34 @@ int main(int argc, const char **argv) {
 		Since B is now relevant search for EACH function/loop associating it etc. Recursion needs to be considered and ideally somehow remembered as a priority weighing factor since recursion will act loop-like
 		*/
 
-		coop::logger::out("ptr_IDs - functions")++;
-		for(auto &pi : coop::global<FunctionDecl>::ptr_id)
-		{
-			coop::logger::log_stream << pi.ptr << " " << pi.id ;
-			coop::logger::out();
-		}
-		coop::logger::depth--;
-		coop::logger::out("ptr_IDs - loops")++;
-		for(auto &pi : coop::global<Stmt>::ptr_id)
-		{
-			coop::logger::log_stream << pi.ptr << " " << pi.id ;
-			coop::logger::out();
-		}
-		coop::logger::depth--;
-		coop::logger::out("fl_nodes - f")++;
-		for(auto &fn : coop::AST_abbreviation::function_nodes)
-		{
-			coop::logger::log_stream << fn.second->ID();
-			coop::logger::out();
-		}
-		coop::logger::depth--;
-		coop::logger::out("fl_nodes - l")++;
-		for(auto &fl : coop::AST_abbreviation::loop_nodes)
-		{
-			coop::logger::log_stream << fl.second->ID();
-			coop::logger::out();
-		}
-		coop::logger::depth--;
+		//coop::logger::out("ptr_IDs - functions")++;
+		//for(auto &pi : coop::global<FunctionDecl>::ptr_id)
+		//{
+		//	coop::logger::log_stream << pi.ptr << " " << pi.id ;
+		//	coop::logger::out();
+		//}
+		//coop::logger::depth--;
+		//coop::logger::out("ptr_IDs - loops")++;
+		//for(auto &pi : coop::global<Stmt>::ptr_id)
+		//{
+		//	coop::logger::log_stream << pi.ptr << " " << pi.id ;
+		//	coop::logger::out();
+		//}
+		//coop::logger::depth--;
+		//coop::logger::out("fl_nodes - f")++;
+		//for(auto &fn : coop::AST_abbreviation::function_nodes)
+		//{
+		//	coop::logger::log_stream << fn.second->ID();
+		//	coop::logger::out();
+		//}
+		//coop::logger::depth--;
+		//coop::logger::out("fl_nodes - l")++;
+		//for(auto &fl : coop::AST_abbreviation::loop_nodes)
+		//{
+		//	coop::logger::log_stream << fl.second->ID();
+		//	coop::logger::out();
+		//}
+		//coop::logger::depth--;
 
 
 		//traverse the AST_abbreviation to find out wether or not recursive function calls exist and remember them
@@ -408,6 +409,13 @@ int main(int argc, const char **argv) {
 		so we also need to consider all the functions, that are being called in a loop, and check, wether or
 		not they use relevant members*/
 		coop::AST_abbreviation::attributeNestedMemberUsages();
+
+		//for debugging - print the ast abbreviation from bottom up
+		//for(auto n : coop::AST_abbreviation::leaf_nodes)
+		//{
+		//	coop::AST_abbreviation::print_parents(n);
+		//}
+
 
 		//determine the loop depth of the nodes
 		//We should now have record_infos with valid information on which members are used by which function/loop
@@ -446,31 +454,32 @@ int main(int argc, const char **argv) {
 				float average = 0;
 
 				//check the functions - if there is a recursive function, make sure to add its members' field weights to the average
-				for(auto func_mems : *rec.relevant_functions)
-				{
-					const FunctionDecl *func = func_mems.first;
-					//get node
-					auto function_node = coop::AST_abbreviation::function_nodes.find(func)->second;
-					if(!function_node->recursive_calls.empty())
-					{
-						//get fnc_idx
-						int function_idx = coop::FunctionRegistrationCallback::function_idx_mapping[func];
-						auto mems = func_mems.second;
-						for(auto mem : mems)
-						{
-							int mem_idx = rec.isRelevantField(mem);
-							if(mem_idx >= 0)
-							{
-								float weight = rec.fun_mem.at(mem_idx, function_idx);
-								rec.field_weights[mem_idx].second += weight;
-								average += weight;
-							}
-						}
-					}
-				}
+				//for(auto func_mems : *rec.relevant_functions)
+				//{
+				//	const FunctionDecl *func = func_mems.first;
+				//	//get node
+				//	auto function_node = coop::AST_abbreviation::function_nodes.find(func)->second;
+				//	if(!function_node->recursive_calls.empty())
+				//	{
+				//		//get fnc_idx
+				//		int function_idx = coop::FunctionRegistrationCallback::function_idx_mapping[func];
+				//		auto mems = func_mems.second;
+				//		for(auto mem : mems)
+				//		{
+				//			int mem_idx = rec.isRelevantField(mem);
+				//			if(mem_idx >= 0)
+				//			{
+				//				float weight = rec.fun_mem.at(mem_idx, function_idx);
+				//				rec.field_weights[mem_idx].second += weight;
+				//				average += weight;
+				//			}
+				//		}
+				//	}
+				//}
 
 				//each record may have several fields - iterate them
 				int num_fields = rec.field_idx_mapping.size();
+				float max = 0;
 				for(auto fi : rec.field_idx_mapping){
 					int field_idx = fi.second;
 					//add up the column of the weighted loop_mem map 
@@ -478,7 +487,14 @@ int main(int argc, const char **argv) {
 					for(unsigned y = 0; y < rec.relevant_loops->size(); ++y){
 						accumulated_field_weight += rec.loop_mem.at(field_idx, y);
 					}
+					//add up the column of the weighted fun_mem map 
+					for(unsigned y = 0; y < rec.relevant_functions->size(); ++y){
+						accumulated_field_weight += rec.fun_mem.at(field_idx, y);
+					}
 					rec.field_weights[field_idx].second = accumulated_field_weight;
+					if(max < accumulated_field_weight){
+						max = accumulated_field_weight;
+					}
 					average += accumulated_field_weight;
 				}
 				
@@ -513,10 +529,132 @@ int main(int argc, const char **argv) {
 				//the record's field_weights is now ordered (descending) so the moment we find a cold value
 				//the following  values will also be cold
 				float tolerant_average = average * (1-hot_split_tolerance);
-				coop::logger::log_stream << rec.record->getNameAsString().c_str() << "'s tolerant average is: " << tolerant_average;
+				float one_minus_avg = max - average;
+				float top_2 = std::max<float>(average, one_minus_avg)/2;
+
+				//--------------------------significance ordering
+				//sort the elements in a descending order
+				std::sort(rec.field_weights.begin(), rec.field_weights.end(), [](
+					std::pair<const clang::FieldDecl*, float>& e1,
+					std::pair<const clang::FieldDecl*, float>& e2)
+					{return e1.second > e2.second;});
+				//get all the weights
+				std::vector<float> weights(rec.field_weights.size());
+				for(unsigned int i = 0; i < rec.field_weights.size(); ++i)
+				{
+					weights[i] = rec.field_weights[i].second;
+				}
+
+				SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size());
+				coop::logger::out("Significance groups:");
+				coop::logger::depth++;
+				significance_groups->print();
+				coop::logger::depth--;
+
+
+				SGroup *p = significance_groups;
+				size_t record_size = 0;
+				float sum_max_field_weight = 0;
+				//determine each groups traits (typesize, highest fieldweight)
+				do{
+					//iterate over the fields, that this group encompasses
+					for(unsigned int i = p->start_idx; i <= p->end_idx; ++i)
+					{
+						auto &f_w = rec.field_weights[i];
+						coop::logger::log_stream << "p->type_size: " << p->type_size << " += " << coop::get_sizeof_in_byte(f_w.first) << "("<<f_w.first->getNameAsString()<<")";
+						coop::logger::out();
+						p->type_size += coop::get_sizeof_in_byte(f_w.first);
+						if(f_w.second > p->highest_field_weight)
+						{
+							p->highest_field_weight = f_w.second;
+						}
+					}
+					sum_max_field_weight += p->highest_field_weight;
+					record_size += p->type_size;
+				}while((p=p->next));
+
+				//now apply the heuristic to the groups to find a possible split
+
+				bool found_split = false;
+				size_t Si_prev = significance_groups->type_size;
+				size_t CLS = l1.line_size;
+				float sum_max_k = significance_groups->highest_field_weight;
+				p=significance_groups->next; //splitting makes only sence from the 2nd group (we dont want to split everything...)
+				coop::logger::log_stream << "rec_size: " << record_size;
 				coop::logger::out();
+				if(p)
+				do{
+					coop::logger::out("iterating:");
+					p->print();
+					size_t S0_i = Si_prev + p->type_size;
+					size_t Si_n= record_size - Si_prev;
+					coop::logger::log_stream << "S0_i = " << Si_prev << " + " << p->type_size;
+					coop::logger::out();
+					coop::logger::log_stream << "S0_i: " << S0_i << ", Si_n: " << Si_n;
+					coop::logger::out();
+
+					//first requirement -> either reduce number cachelines or number elements per cache-line
+					bool reduces_cache_lines_per_element = false;
+					bool reduces_elements_per_cache_line = false;
+
+					float cache_lines_per_element_with = S0_i*1.f/CLS;
+					float cache_lines_per_element_without = Si_prev*1.f/CLS;
+					float elements_per_cache_line_with = CLS*1.f/S0_i;
+					float elements_per_cache_line_without = CLS*1.f/Si_prev;
+
+					coop::logger::log_stream << "cache_lines_per_element_with: " << S0_i<<"/"<<CLS<<"= "<< S0_i*1.f/CLS << "("<<std::ceil(S0_i*1.f/CLS)<<")";
+					coop::logger::out();
+					coop::logger::log_stream << "cache_lines_per_element_without: "  << Si_prev<<"/"<<CLS<<"= " << Si_prev*1.f/CLS << "("<<std::ceil(Si_prev*1.f/CLS)<<")";
+					coop::logger::out();
+					coop::logger::log_stream << "elements_per_cache_line_with: "  << CLS<<"/"<<S0_i<<"= " << CLS*1.f/S0_i << "("<<std::ceil(CLS*1.f/S0_i)<<")";
+					coop::logger::out();
+					coop::logger::log_stream << "elements_per_cache_line_without: "  << CLS<<"/"<<Si_prev<<"= " << CLS*1.f/Si_prev << "("<<std::ceil(CLS*1.f/Si_prev)<<")";
+					coop::logger::out();
+
+					reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(CLS*1.f/Si_prev) > std::ceil(CLS*1.f/S0_i)));
+					reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(Si_prev*1.f/CLS) < std::ceil(S0_i*1.f/CLS)));
+
+					coop::logger::log_stream << "precon: " << reduces_elements_per_cache_line << " || " << reduces_cache_lines_per_element;
+					coop::logger::out();
+
+					if(reduces_cache_lines_per_element || reduces_elements_per_cache_line){
+						//check whether the cost/benefit ratio is good
+						float w = sum_max_k * (-sizeof(void*) + Si_n)/1.f*CLS;
+						float o = (sum_max_field_weight - sum_max_k) * (1 + Si_n)/1.f*CLS;
+
+						coop::logger::log_stream << w << ">" << o;
+						coop::logger::out();
+
+						bool W = w > o;
+						if(W){
+							//this split is worht!
+							found_split = true;
+							break;
+						}
+					}
+
+					Si_prev = S0_i;
+					sum_max_k += p->highest_field_weight;
+				}
+				while((p=p->next));
+				//--------------------------significance ordering
+
+
+
+				coop::logger::log_stream << "W: " << (found_split ? p->highest_field_weight : 0);
+				coop::logger::out();
+				coop::logger::log_stream << "avg: " << average;
+				coop::logger::out();
+				coop::logger::log_stream << "1-avg: " << one_minus_avg;
+				coop::logger::out();
+				coop::logger::log_stream << "top/2: " << top_2;
+				coop::logger::out();
+
+
+
+				float heuristic = tolerant_average;
 				for(auto f_w : rec.field_weights){
-					if(f_w.second < tolerant_average){
+					if(f_w.second < heuristic){
 						rec.cold_fields.push_back(f_w.first);
 						coop::logger::log_stream << "[cold]\t" ;
 					}else{
@@ -929,7 +1067,7 @@ void create_member_matrices( coop::record::record_info *record_stats)
 							number_member_associations += 1;
 						}
 					}
-					if(number_member_associations > 1)
+					if(number_member_associations > 0)
 					{
 						for(unsigned i = 0; i < rec_ref.fields.size(); ++i){
 							float &field_weight = rec_ref.loop_mem.at(i, loop_idx);
@@ -960,6 +1098,41 @@ void create_member_matrices( coop::record::record_info *record_stats)
 					coop::logger::err(coop::Should_Exit::YES);
 				}
 				coop::fl_node *function_node = node_iter->second;
+
+
+				//get the loops idx in the rec_ref (so the right line in the loop_mem matrix is updated)
+				auto func_idx_iter = coop::FunctionRegistrationCallback::function_idx_mapping.find(func_ptr);
+				if(func_idx_iter == coop::FunctionRegistrationCallback::function_idx_mapping.end())
+				{
+					coop::logger::log_stream << "No idx found for " << function_node->ID();
+					coop::logger::err(coop::Should_Exit::YES);
+				}
+
+				int func_idx = func_idx_iter->second;
+
+				/*apply cross-referenced weighting - assuming temporal locality by node familiarity. Value this temporal locality
+				we add the number associated members to the members' weights, so their temporal locality has a better chance to result
+				in spatial locality by getting paired we do this BEFORE the vertical accumulation and BEFORE the depth weighting but AFTER
+				the memberusage attribution, because the temporal locality should not be blurred by the field's overall weights and
+				this way member relations through several nested loops are depicted accurately*/
+				{
+					int number_member_associations = 0;
+					for(unsigned i = 0; i < rec_ref.fields.size(); ++i){
+						if(rec_ref.fun_mem.at(i, func_idx) > 0){
+							number_member_associations += 1;
+						}
+					}
+					if(number_member_associations > 0)
+					{
+						for(unsigned i = 0; i < rec_ref.fields.size(); ++i){
+							float &field_weight = rec_ref.fun_mem.at(i, func_idx);
+							if(field_weight > 0)
+							{
+								field_weight += rec_ref.fields.size() - number_member_associations;
+							}
+						}
+					}
+				}
 
 				//if the function is recursive, it actually has a depth, otherwise only loop nodes have a depth > 0
 				if(function_node->getDepth() > 0 && !function_node->recursive_calls.empty())

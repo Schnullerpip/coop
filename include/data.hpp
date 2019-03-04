@@ -149,6 +149,9 @@ namespace AST_abbreviation
 
     //makes sure all member usages found in a child node are attributed to its parents respectively
     void attributeNestedMemberUsages();
+
+    //print out the relations
+    void print_parents(fl_node *fln);
 }
 
 
