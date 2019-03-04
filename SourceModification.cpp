@@ -217,7 +217,7 @@ namespace coop{
                 for(size_t i = 0; i < in_class_initialized_fields.size(); ++i){
                     const FieldDecl *field = in_class_initialized_fields[i];
                     constructors << field->getNameAsString() << "("
-                        << get_text(field->getInClassInitializer(), &field->getASTContext()) << ")";
+                        << coop::naming::get_from_end_until(get_text(field->getInClassInitializer(), &field->getASTContext()).c_str(), '=') << ")";
                     if(i < in_class_initialized_fields.size()-1){
                         constructors << ", ";
                     }
