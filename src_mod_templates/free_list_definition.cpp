@@ -1,7 +1,7 @@
 
 //creating memory space for RECORD_NAME's hot/cold data
-constexpr size_t hot_SIZE_VARIABLE = coop_cex::size_plus_alignments<sizeof(RECORD_NAME) * SIZE_HOT, CACHE_LINE_SIZE, sizeof(RECORD_NAME)>();
-constexpr size_t cold_SIZE_VARIABLE = coop_cex::size_plus_alignments<sizeof(STRUCT_NAME) * SIZE_COLD, CACHE_LINE_SIZE, sizeof(STRUCT_NAME)>();
+constexpr size_t hot_SIZE_VARIABLE = coop::size_plus_alignments(SIZE_HOT, CACHE_LINE_SIZE, coop::MINIMAL_FREELIST_T_SIZE<RECORD_NAME>());
+constexpr size_t cold_SIZE_VARIABLE = coop::size_plus_alignments(SIZE_COLD, CACHE_LINE_SIZE, coop::MINIMAL_FREELIST_T_SIZE<STRUCT_NAME>());
 char BYTE_DATA[hot_SIZE_VARIABLE + cold_SIZE_VARIABLE];
 FREE_LIST_NAME<RECORD_NAME> FREE_LIST_INSTANCE_HOT(BYTE_DATA, BYTE_DATA+hot_SIZE_VARIABLE, HOT_ALIGNMENT);
 FREE_LIST_NAME<STRUCT_NAME> FREE_LIST_INSTANCE_COLD(BYTE_DATA+hot_SIZE_VARIABLE, BYTE_DATA+hot_SIZE_VARIABLE+cold_SIZE_VARIABLE, COLD_ALIGNMENT);

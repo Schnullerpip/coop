@@ -203,8 +203,25 @@ namespace coop{
                 std::stringstream constructors;
                 for(auto field : cpr->rec_info->cold_fields){
 
+                    bool is_array_type = field->getType().getTypePtr()->isArrayType();
                     //ss << get_text(field, &field->getASTContext());
-                    ss << field->getType().withoutLocalFastQualifiers().getAsString() << " " << field->getNameAsString() << ";\n";
+                    auto type = field->getType();
+                    type.removeLocalConst();
+                    if(is_array_type)
+                    {
+                        char buff[1024];
+                        const char *type_begin = type.getAsString().c_str();
+                        const char *arr_begin = coop::naming::get_from_start_until(type_begin, '[')-1;
+                        buff[arr_begin-type_begin] = '\0';
+                        memcpy(buff, type_begin, arr_begin - type_begin);
+                        coop::logger::log_stream << type_begin << "->'" << buff << "'";
+                        coop::logger::out();
+                        coop::logger::log_stream << arr_begin;
+                        coop::logger::out();
+                        ss << buff << " " << field->getNameAsString() << (arr_begin-1) << ";\n";
+                    }else{
+                        ss << type.getAsString() << " " << field->getNameAsString() << ";\n";
+                    }
                     //if(*cpr->rec_info->cold_fields.end() != field){
                     //    ss << ";\n";
                     //}

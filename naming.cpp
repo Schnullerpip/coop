@@ -8,7 +8,7 @@ namespace naming{
     {
         const char *relevant_token;
         size_t iterations = 0, file_length = strlen(file);
-        for(relevant_token = file+strlen(file); *(relevant_token-1) != delimiter && iterations < file_length; --relevant_token){
+        for(relevant_token = file+strlen(file); *(relevant_token-1) != delimiter && (iterations < file_length); --relevant_token){
             ++iterations;
         }
         return relevant_token;
