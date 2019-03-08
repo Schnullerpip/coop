@@ -75,79 +75,77 @@ constexpr size_t size_plus_alignments(size_t number_elements, size_t cache_line_
 
 
 
-template<typename T>
 class coop_free_list
 {
 public:
-	coop_free_list(char * start, char *end, size_t alignment):
+	coop_free_list(char * start, char *_end, size_t alignment, size_t block_size):
 		//the first element needs to be aligned as well be aligned 
 		//remember the aligned start so we can later set the free_ptr to it
-		begin (_char_ptr = align(start, alignment, true)),
-		end(end)
+		_begin (free_ptr = align(start, alignment, true)),
+		_end(_end)
     {
 		assert((start != nullptr)
-			&& (end != nullptr)
-			&& (end > start)
+			&& (_end != nullptr)
+			&& (_end > start)
 			&& "invalid constructor arguments");
 
 		//how many elements fit in a line aka after how many do we need a new alignment offset
-		size_t Ts_per_chunk = div_or_1(alignment,sizeof(T));
+		size_t Ts_per_chunk = div_or_1(alignment,block_size);
 
 		//after enough Ts to exceed the alignment - how much padding
 		//is necessary to again align to the alignment properly
-		size_t padding_to_next = get_padding(alignment, sizeof(T));
+		size_t padding_to_next = get_padding(alignment, block_size);
 
 		//iterate the free list's range and initialize the pointers
 		size_t Ts = 0;
-		for(; _char_ptr < end; free_ptr = *_next)
+		for(; free_ptr < _end; free_ptr = *_next)
 		{
 			//keep track of when we need a fresh align
 			if(++Ts > Ts_per_chunk)
 				Ts = 1;
 
 			//determine where the next element will be placed
-			*_char_ptr_next = _char_ptr+sizeof(T)+(Ts == Ts_per_chunk ? padding_to_next : 0);
+			*_next = free_ptr+block_size+(Ts == Ts_per_chunk ? padding_to_next : 0);
 
 			//it it is outside of our bounds stop
-			if(*_char_ptr_next >= end)
+			if(*_next >= _end)
 			{
 				*_next = nullptr;
 				break;
 			}
 		}
 
-		//set the uniform's free_ptr to the list's beginning
-		_char_ptr = this->begin;
+		//set the uniform's free_ptr to the list's _beginning
+		free_ptr = _begin;
 	}
 
+	template<typename T>
 	T * get()
 	{
 		assert(free_ptr && "coop free list instance was initialized with too little memory space - change default settings in coop_config.txt");
-		T *ret = free_ptr;
+		T *ret = union_cast<T*>(free_ptr);
 		free_ptr = *_next;
 		return ret;
 	}
 
-	void free(T *p)
+	void free(void *p)
 	{
 		assert((p != nullptr)
-			&& (union_cast<uintptr_t>(p) >= union_cast<uintptr_t>(begin)
-			&& union_cast<uintptr_t>(p) < union_cast<uintptr_t>(end))
+			&& (union_cast<uintptr_t>(p) >= union_cast<uintptr_t>(_begin)
+			&& union_cast<uintptr_t>(p) < union_cast<uintptr_t>(_end))
 			&& "Pointer to free is not inside the free list's bounds!");
 
-		T * tmp_ptr = free_ptr;
-		free_ptr = p;
+		char *tmp_ptr = free_ptr;
+		free_ptr = union_cast<char*>(p);
 		*_next = tmp_ptr;
 	}
 private:
 	union {
-		T *free_ptr;
-		T **_next;
-		char *_char_ptr;
-		char **_char_ptr_next;
+		char *free_ptr;
+		char **_next;
 	};
-	char * begin = nullptr;
-	char * end = nullptr;
+	char * _begin = nullptr;
+	char * _end = nullptr;
 };
 
 #endif

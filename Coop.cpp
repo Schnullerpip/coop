@@ -597,19 +597,10 @@ int main(int argc, const char **argv) {
 					bool reduces_cache_lines_per_element = false;
 					bool reduces_elements_per_cache_line = false;
 
-					float cache_lines_per_element_with = S0_i*1.f/CLS;
-					float cache_lines_per_element_without = Si_prev*1.f/CLS;
-					float elements_per_cache_line_with = CLS*1.f/S0_i;
-					float elements_per_cache_line_without = CLS*1.f/Si_prev;
-
-					coop::logger::log_stream << "cache_lines_per_element_with: " << S0_i<<"/"<<CLS<<"= "<< S0_i*1.f/CLS << "("<<std::ceil(S0_i*1.f/CLS)<<")";
-					coop::logger::out();
-					coop::logger::log_stream << "cache_lines_per_element_without: "  << Si_prev<<"/"<<CLS<<"= " << Si_prev*1.f/CLS << "("<<std::ceil(Si_prev*1.f/CLS)<<")";
-					coop::logger::out();
-					coop::logger::log_stream << "elements_per_cache_line_with: "  << CLS<<"/"<<S0_i<<"= " << CLS*1.f/S0_i << "("<<std::ceil(CLS*1.f/S0_i)<<")";
-					coop::logger::out();
-					coop::logger::log_stream << "elements_per_cache_line_without: "  << CLS<<"/"<<Si_prev<<"= " << CLS*1.f/Si_prev << "("<<std::ceil(CLS*1.f/Si_prev)<<")";
-					coop::logger::out();
+					//float cache_lines_per_element_with = S0_i*1.f/CLS;
+					//float cache_lines_per_element_without = Si_prev*1.f/CLS;
+					//float elements_per_cache_line_with = CLS*1.f/S0_i;
+					//float elements_per_cache_line_without = CLS*1.f/Si_prev;
 
 					reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(CLS*1.f/Si_prev) > std::ceil(CLS*1.f/S0_i)));
 					reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(Si_prev*1.f/CLS) < std::ceil(S0_i*1.f/CLS)));

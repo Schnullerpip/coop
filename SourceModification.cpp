@@ -775,7 +775,7 @@ namespace coop{
         {
             std::string new_replacement = get_text(expr_ctxt.first, expr_ctxt.second);
             std::stringstream ss;
-            ss << "new(" << cpr-> qualifier << cpr->free_list_instance_name_hot << ".get())";
+            ss << "new(" << cpr-> qualifier << cpr->free_list_instance_name_hot << ".get<" << cpr->qualified_record_name<< ">())";
             replaceAll(new_replacement, "new", ss.str());
 
             get_rewriter(expr_ctxt.second)->
