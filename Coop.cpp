@@ -539,20 +539,22 @@ int main(int argc, const char **argv) {
 					std::pair<const clang::FieldDecl*, float>& e2)
 					{return e1.second > e2.second;});
 				//get all the weights
-				std::vector<float> weights(rec.field_weights.size());
+				std::vector<coop::weight_size> weights(rec.field_weights.size());
 				for(unsigned int i = 0; i < rec.field_weights.size(); ++i)
 				{
-					weights[i] = rec.field_weights[i].second;
+					auto &f_w = rec.field_weights[i];
+					weights[i] = {f_w.second, coop::get_sizeof_in_byte(f_w.first)};
 				}
 
-				SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size());
+				coop::SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size());
+
 				coop::logger::out("Significance groups:");
 				coop::logger::depth++;
 				significance_groups->print();
 				coop::logger::depth--;
 
 
-				SGroup *p = significance_groups;
+				coop::SGroup *p = significance_groups;
 				size_t record_size = 0;
 				float sum_max_field_weight = 0;
 				//determine each groups traits (typesize, highest fieldweight)
@@ -569,29 +571,34 @@ int main(int argc, const char **argv) {
 							p->highest_field_weight = f_w.second;
 						}
 					}
+					p->finalize(weights);
 					sum_max_field_weight += p->highest_field_weight;
 					record_size += p->type_size;
 				}while((p=p->next));
 
 				//now apply the heuristic to the groups to find a possible split
-
 				bool found_split = false;
-				size_t Si_prev = significance_groups->type_size;
+				//size_t Si_prev = significance_groups->type_size;
 				size_t CLS = l1.line_size;
 				float sum_max_k = significance_groups->highest_field_weight;
 				p=significance_groups->next; //splitting makes only sence from the 2nd group (we dont want to split everything...)
 				coop::logger::log_stream << "rec_size: " << record_size;
 				coop::logger::out();
-				if(p)
+				if(p){
+					coop::SGroup *prev = significance_groups;
 				do{
 					coop::logger::out("iterating:");
 					p->print();
-					size_t S0_i = Si_prev + p->type_size;
-					size_t Si_n= record_size - Si_prev;
-					coop::logger::log_stream << "S0_i = " << Si_prev << " + " << p->type_size;
-					coop::logger::out();
-					coop::logger::log_stream << "S0_i: " << S0_i << ", Si_n: " << Si_n;
-					coop::logger::out();
+					//size_t S0_i = Si_prev + p->type_size;
+					//size_t Si_n= record_size - Si_prev;
+					//coop::logger::log_stream << "S0_i = " << Si_prev << " + " << p->type_size;
+					//coop::logger::out();
+					//coop::logger::log_stream << "S0_i: " << S0_i << ", Si_n: " << Si_n;
+					//coop::logger::out();
+
+					size_t S0_i = coop::determine_size_with_padding(significance_groups, p);
+					size_t Si_prev = coop::determine_size_with_padding(significance_groups, prev);
+					size_t Si_n = coop::determine_size_with_padding(p, nullptr);
 
 					//first requirement -> either reduce number cachelines or number elements per cache-line
 					bool reduces_cache_lines_per_element = false;
@@ -602,17 +609,8 @@ int main(int argc, const char **argv) {
 					float elements_per_cache_line_with = CLS*1.f/S0_i;
 					float elements_per_cache_line_without = CLS*1.f/Si_prev;
 
-					coop::logger::log_stream << "cache_lines_per_element_with: " << S0_i<<"/"<<CLS<<"= "<< S0_i*1.f/CLS << "("<<std::ceil(S0_i*1.f/CLS)<<")";
-					coop::logger::out();
-					coop::logger::log_stream << "cache_lines_per_element_without: "  << Si_prev<<"/"<<CLS<<"= " << Si_prev*1.f/CLS << "("<<std::ceil(Si_prev*1.f/CLS)<<")";
-					coop::logger::out();
-					coop::logger::log_stream << "elements_per_cache_line_with: "  << CLS<<"/"<<S0_i<<"= " << CLS*1.f/S0_i << "("<<std::ceil(CLS*1.f/S0_i)<<")";
-					coop::logger::out();
-					coop::logger::log_stream << "elements_per_cache_line_without: "  << CLS<<"/"<<Si_prev<<"= " << CLS*1.f/Si_prev << "("<<std::ceil(CLS*1.f/Si_prev)<<")";
-					coop::logger::out();
-
-					reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(CLS*1.f/Si_prev) > std::ceil(CLS*1.f/S0_i)));
-					reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(Si_prev*1.f/CLS) < std::ceil(S0_i*1.f/CLS)));
+					reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(elements_per_cache_line_without) > std::ceil(elements_per_cache_line_with)));
+					reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(cache_lines_per_element_without) < std::ceil(cache_lines_per_element_with)));
 
 					coop::logger::log_stream << "precon: " << reduces_elements_per_cache_line << " || " << reduces_cache_lines_per_element;
 					coop::logger::out();
@@ -635,8 +633,9 @@ int main(int argc, const char **argv) {
 
 					Si_prev = S0_i;
 					sum_max_k += p->highest_field_weight;
+					prev = p;
+				} while((p=p->next));
 				}
-				while((p=p->next));
 				//--------------------------significance ordering
 
 

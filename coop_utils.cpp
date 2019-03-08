@@ -3,10 +3,10 @@
 #include"data.hpp"
 
 
-int coop::get_sizeof_in_bits(const FieldDecl* field){
+size_t coop::get_sizeof_in_bits(const FieldDecl* field){
     return field->getASTContext().getTypeSize(field->getType());
 }
-int coop::get_sizeof_in_byte(const FieldDecl* field){
+size_t coop::get_sizeof_in_byte(const FieldDecl* field){
     return get_sizeof_in_bits(field)/8;
 }
 
@@ -95,22 +95,36 @@ void coop::record::record_info::print_loop_mem_mat(
 }
 
 namespace {
-    static float get_median(float *begin, size_t elements){
+    static float get_median(coop::weight_size *begin, size_t elements){
         if(elements==0)
             return 0;
 
         if(elements == 1)
-            return *begin;
+            return begin->weight;
         
         if(elements % 2 == 0) //even so median is average of mid most 2 elements
         {
-            return (begin[elements/2] + begin[elements/2-1])/2;
+            return (begin[elements/2].weight + begin[elements/2-1].weight)/2;
         }else{ //odd so median is middle element
-            return begin[elements/2];
+            return begin[elements/2].weight;
         }
     }
 }
 
+namespace coop {
+
+void SGroup::finalize(std::vector<coop::weight_size> &weights)
+{
+    weights_and_sizes.insert(weights_and_sizes.begin(), weights.begin()+start_idx, weights.begin()+end_idx+1);
+    coop::logger::log_stream << "weights in group " << start_idx << " - " << end_idx;
+    coop::logger::out()++;
+    for(auto ws : weights_and_sizes)
+    {
+        coop::logger::log_stream << ws.size_in_byte;
+        coop::logger::out();
+    }
+    coop::logger::depth--;
+}
 void SGroup::print()
 {
     coop::logger::log_stream << "[" << start_idx << " - " << end_idx << "]";
@@ -126,8 +140,7 @@ void SGroup::print()
 }
 
 
-namespace coop{
-SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned int number_elements){
+SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements){
     coop::logger::log_stream << "call:find_significance_groups(" << elements << "," <<offset<< "," << number_elements << ")";
     coop::logger::out();
     coop::logger::depth+=1;
@@ -135,7 +148,7 @@ SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned
     coop::logger::log_stream << "x = {";
     for(unsigned int i = offset; i < offset+number_elements; ++i)
     {
-        coop::logger::log_stream << elements[i] << ((i < (offset+number_elements-1)) ? ", " : "");
+        coop::logger::log_stream << elements[i].weight << ((i < (offset+number_elements-1)) ? ", " : "");
     }
     coop::logger::log_stream << "}";
     coop::logger::out();
@@ -148,7 +161,7 @@ SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned
         return new SGroup(offset,offset+number_elements-1);
     }
 
-    float *x = &elements[0];
+    coop::weight_size *x = &elements[0];
     size_t n = number_elements;
 
     //get IQR Q1 and Q2
@@ -186,7 +199,7 @@ SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned
     bool found_high_spikes = false;
     for(unsigned int i = 0; i < n; ++i)
     {
-        if((!found_high_spikes) && (i > 0) && (x[i] < spike_bound_top) && (x[i-1] > spike_bound_top)){
+        if((!found_high_spikes) && (i > 0) && (x[i].weight < spike_bound_top) && (x[i-1].weight > spike_bound_top)){
             //we have found the border that seperates the high spikes from the 'normal' data
             found_high_spikes = true;
             coop::logger::out("found high spikes");
@@ -194,7 +207,7 @@ SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned
             mid_values_start_idx = i;
         }
 
-        if(x[i] < spike_bound_bottom){
+        if(x[i].weight < spike_bound_bottom){
             //we found the border that separates the 'normal' data from the low spikes
             coop::logger::out("found low spikes");
             under_bottom = find_significance_groups(x, i, n-i);
@@ -215,7 +228,7 @@ SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned
     {
         int idx = i+1;
         //int o = i-offset+1;
-        deltas[o] = std::abs(elements[idx] - elements[idx-1]);
+        deltas[o] = std::abs(elements[idx].weight - elements[idx-1].weight);
     }
 
     coop::logger::log_stream << "d = {";
@@ -280,4 +293,41 @@ SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned
         return inside_bounds;
     }
 }
+
+//until -> exclusive
+size_t determine_size_with_padding(SGroup *begin, SGroup *until)
+{
+    //collect all sizes -> bring em in descending order (optimal padding) -> determine padding
+    std::vector<size_t> sizes;
+    size_t sum = 0;
+    coop::logger::out("start");
+    for(SGroup *p = begin; (p != nullptr); p = p->next)
+    {
+        if(!p)coop::logger::out("p is null");
+        coop::logger::log_stream << "group: " << p->start_idx << " - " << p->end_idx;
+        coop::logger::out();
+        //each group has several weights and sizes
+        for(auto &w_s : p->weights_and_sizes)
+        {
+            coop::logger::log_stream << "size: " << w_s.size_in_byte;
+            coop::logger::out();
+            sizes.push_back(w_s.size_in_byte);
+            sum += w_s.size_in_byte;
+        }
+        if(p->next == until)break;
+    }
+
+    //we have all the sizes (in  byte) of the groups -> order them
+    std::sort(sizes.begin(), sizes.end(), [](size_t a, size_t b)->bool{return a>b;});
+
+    coop::logger::log_stream << "sizes size: " << sizes.size();
+    coop::logger::out();
+    coop::logger::log_stream << "sizes[0]: " << sizes[0];
+    coop::logger::out();
+    size_t padding = sizes[0] - (sum % sizes[0]);
+    coop::logger::log_stream << "padding: " << padding << ", all: " << sum + padding;
+    coop::logger::out();
+
+    return sum + padding;
 }
+}//namespace coop
