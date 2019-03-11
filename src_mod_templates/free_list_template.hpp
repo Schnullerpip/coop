@@ -78,15 +78,15 @@ constexpr size_t size_plus_alignments(size_t number_elements, size_t cache_line_
 class coop_free_list
 {
 public:
-	coop_free_list(char * start, char *_end, size_t alignment, size_t block_size):
+	coop_free_list(char * data_start, char *data_end, size_t alignment, size_t block_size):
 		//the first element needs to be aligned as well be aligned 
 		//remember the aligned start so we can later set the free_ptr to it
-		_begin (free_ptr = align(start, alignment, true)),
-		_end(_end)
+		begin (free_ptr = align(data_start, alignment, true)),
+		end(data_end)
     {
-		assert((start != nullptr)
-			&& (_end != nullptr)
-			&& (_end > start)
+		assert((begin != nullptr)
+			&& (end != nullptr)
+			&& ((end - begin) >= (block_size))
 			&& "invalid constructor arguments");
 
 		//how many elements fit in a line aka after how many do we need a new alignment offset
@@ -98,25 +98,25 @@ public:
 
 		//iterate the free list's range and initialize the pointers
 		size_t Ts = 0;
-		for(; free_ptr < _end; free_ptr = *_next)
+		for(; free_ptr < end; free_ptr = *next)
 		{
 			//keep track of when we need a fresh align
 			if(++Ts > Ts_per_chunk)
 				Ts = 1;
 
 			//determine where the next element will be placed
-			*_next = free_ptr+block_size+(Ts == Ts_per_chunk ? padding_to_next : 0);
+			*next = free_ptr+block_size+(Ts == Ts_per_chunk ? padding_to_next : 0);
 
 			//it it is outside of our bounds stop
-			if(*_next >= _end)
+			if(*next >= end)
 			{
-				*_next = nullptr;
+				*next = nullptr;
 				break;
 			}
 		}
 
 		//set the uniform's free_ptr to the list's _beginning
-		free_ptr = _begin;
+		free_ptr = begin;
 	}
 
 	template<typename T>
@@ -124,28 +124,28 @@ public:
 	{
 		assert(free_ptr && "coop free list instance was initialized with too little memory space - change default settings in coop_config.txt");
 		T *ret = union_cast<T*>(free_ptr);
-		free_ptr = *_next;
+		free_ptr = *next;
 		return ret;
 	}
 
 	void free(void *p)
 	{
 		assert((p != nullptr)
-			&& (union_cast<uintptr_t>(p) >= union_cast<uintptr_t>(_begin)
-			&& union_cast<uintptr_t>(p) < union_cast<uintptr_t>(_end))
+			&& (union_cast<uintptr_t>(p) >= union_cast<uintptr_t>(begin)
+			&& union_cast<uintptr_t>(p) < union_cast<uintptr_t>(end))
 			&& "Pointer to free is not inside the free list's bounds!");
 
 		char *tmp_ptr = free_ptr;
 		free_ptr = union_cast<char*>(p);
-		*_next = tmp_ptr;
+		*next = tmp_ptr;
 	}
 private:
 	union {
 		char *free_ptr;
-		char **_next;
+		char **next;
 	};
-	char * _begin = nullptr;
-	char * _end = nullptr;
+	char * begin = nullptr;
+	char * end = nullptr;
 };
 
 #endif
