@@ -3,8 +3,8 @@
 #include "coop_utils.hpp"
 
 #define coop_cold_struct_s "coop_cold_fields_"
-#define coop_safe_struct_access_method_name "access_cold_data()"
-#define coop_struct_access_method_name_const "access_cold_data_const()"
+#define oop_safe_struct_access_method_name "access_cold_data()"
+#define oop_struct_access_method_name_const "access_cold_data_const()"
 #define coop_cold_data_pointer_name "coop_cold_data_ptr"
 #define coop_union_name "coop_union_"
 #define coop_union_instance_name "coop_u"

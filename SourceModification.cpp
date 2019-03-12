@@ -355,22 +355,23 @@ namespace coop{
 
                 replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
                 replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-                cpr->missing_mandatory_private << file_content;
-            }
-
-            {//adding the public access method to the record
-                std::stringstream ss;
-                ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "access_method_to_cold_data.cpp";
-                std::ifstream ifs(ss.str());
-                std::string file_content(
-                    (std::istreambuf_iterator<char>(ifs)),
-                    (std::istreambuf_iterator<char>()));
-
-                replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
-                replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-                replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+                //cpr->missing_mandatory_private << file_content;
                 cpr->missing_mandatory_public << file_content;
             }
+
+            //{//adding the public access method to the record
+            //    std::stringstream ss;
+            //    ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "access_method_to_cold_data.cpp";
+            //    std::ifstream ifs(ss.str());
+            //    std::string file_content(
+            //        (std::istreambuf_iterator<char>(ifs)),
+            //        (std::istreambuf_iterator<char>()));
+
+            //    replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
+            //    replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+            //    replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+            //    cpr->missing_mandatory_public << file_content;
+            //}
             //this function will only be called if ri->cold_fields is not empty, so we can safely take its first element
             //we simply need some place to insert the reference to the cold data to... 
             //get_rewriter(cpr->rec_info->record->getASTContext())->
@@ -427,12 +428,14 @@ namespace coop{
             ss << field->getParent()->getQualifiedNameAsString() << "::";
 
             //check if the memberExpr's callee is supposed to handle a const instance
-            if(mem_expr->getBase()->getType().isConstQualified())
-            {
-                ss << coop_struct_access_method_name_const;
-            }else{
-                ss << coop_safe_struct_access_method_name;
-            }
+            //if(mem_expr->getBase()->getType().isConstQualified())
+            //{
+            //    ss << coop_struct_access_method_name_const;
+            //}else{
+            //    ss << coop_safe_struct_access_method_name;
+            //}
+
+            ss << cpr->cold_data_ptr_name;
 
             ss << "->" << field_decl_name;
 
@@ -686,7 +689,7 @@ namespace coop{
                         auto src_rng = ini->getSourceRange();
                         std::string txt = get_text_(src_rng, ctor->getASTContext());
                         txt = coop::naming::get_from_start_until(txt.c_str(), '(');
-                        cold_field_initializations << "\n" << coop_safe_struct_access_method_name << "->" << member->getNameAsString() << " = " << txt << ";";
+                        cold_field_initializations << "\n" << cpr->cold_data_ptr_name << "->" << member->getNameAsString() << " = " << txt << ";";
 
                     }
                 }
@@ -726,6 +729,15 @@ namespace coop{
                 replaceAll(copy_constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
                 replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
                 cpr->missing_mandatory_public << copy_constructor_code;
+            }else if(cpr->rec_info->record->hasUserDeclaredCopyConstructor()){
+                //there is a user defined copy constructor
+                //make sure it gets an initialized pointer to a cold struct instance
+                std::stringstream ss;   
+                ss << cpr->cold_data_ptr_name << " = new (" << cpr->free_list_instance_name_cold << ".get<" << cpr->struct_name << ">()) " << cpr->struct_name << "();";
+                auto ctor = cp_ctors[0];
+
+                auto r = get_rewriter(ctor->getASTContext());
+                r->InsertTextAfterToken(ctor->getBody()->getLocStart(), ss.str());
             }
         }
 
