@@ -437,7 +437,7 @@ namespace coop{
 
             ss << cpr->cold_data_ptr_name;
 
-            ss << "->" << field_decl_name;
+            ss << ".ptr->" << field_decl_name;
 
             get_rewriter(ast_context)->
                 ReplaceText(mem_expr->getMemberLoc(), ss.str());
@@ -516,22 +516,7 @@ namespace coop{
             }
             auto record_decl = global_rec->ptr;
 
-            //create the code for general constructors
-            std::ifstream ifs(get_src_mod_file_name("constructor_deep_copy_emulation.cpp"));
-            std::string constructor_code(
-                (std::istreambuf_iterator<char>(ifs)),
-                (std::istreambuf_iterator<char>()));
-            replaceAll(constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-            replaceAll(constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-            replaceAll(constructor_code, STRUCT_NAME, cpr->struct_name);
-
-            //check whether or not the record has the respective methods 
-            //if so inject the code where it belongs
-            //else wrap the code to be injected as methods and mark it as missing_mandatory so it is injected later on
-
-            //constructor
-            //auto ctors = coop::FindConstructor::rec_constructor_map[record_decl];
-            bool found_normal_ctor = false;
+            //bool found_normal_ctor = false;
             auto &ctors = coop::FindConstructor::rec_constructor_map[record_decl];
             for(auto ctor : ctors)
             {
@@ -689,7 +674,7 @@ namespace coop{
                         auto src_rng = ini->getSourceRange();
                         std::string txt = get_text_(src_rng, ctor->getASTContext());
                         txt = coop::naming::get_from_start_until(txt.c_str(), '(');
-                        cold_field_initializations << "\n" << cpr->cold_data_ptr_name << "->" << member->getNameAsString() << " = " << txt << ";";
+                        cold_field_initializations << "\n" << cpr->cold_data_ptr_name << ".ptr->" << member->getNameAsString() << " = " << txt << ";";
 
                     }
                 }
@@ -697,48 +682,45 @@ namespace coop{
 
                 //inject the code to the existing ctor
                 //get the ctors location
-                found_normal_ctor = true;
-                replaceAll(constructor_code, FIELD_INITIALIZERS, const_field_initializers.str());
                 std::stringstream code_injection;
-                code_injection << constructor_code;
                 code_injection << cold_field_initializations.str();
                 auto r = get_rewriter(ctor->getASTContext());
                 r->InsertTextAfterToken(ctor->getBody()->getLocStart(), code_injection.str());
             }
 
-            if(!found_normal_ctor)
-            {
-                //there is no ctor -> create one
-                cpr->missing_mandatory_public << "\n" << cpr->record_name << "(){" << constructor_code << "}\n";
-            }
+            //if(!found_normal_ctor)
+            //{
+            //    //there is no ctor -> create one
+            //    cpr->missing_mandatory_public << "\n" << cpr->record_name << "(){" << constructor_code << "}\n";
+            //}
 
             //create the code for copy constructors
             /*if the copy ctor is implicit, then we must now make sure, that not the cold_data_ptr is copied (implicitly)
             but rather ALL fields cold and hot - so we emulate a deep copy and temporary copies of objects don't trigger
             the cold data instances to be destructed*/
-            auto cp_ctors = coop::FindConstructor::rec_copy_constructor_map[record_decl];
-            if(cp_ctors.empty())
-            {
-                //there is no definition of a copy constructor - so we make one
-                ifs = std::ifstream (get_src_mod_file_name("existing_copy_constructor_deep_copy_emulation.cpp"));
-                std::string copy_constructor_code(
-                    (std::istreambuf_iterator<char>(ifs)),
-                    (std::istreambuf_iterator<char>()));
-                replaceAll(copy_constructor_code, RECORD_NAME, cpr->record_name);
-                replaceAll(copy_constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-                replaceAll(copy_constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-                replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
-                cpr->missing_mandatory_public << copy_constructor_code;
-            }else if(cpr->rec_info->record->hasUserDeclaredCopyConstructor()){
-                //there is a user defined copy constructor
-                //make sure it gets an initialized pointer to a cold struct instance
-                std::stringstream ss;   
-                ss << cpr->cold_data_ptr_name << " = new (" << cpr->free_list_instance_name_cold << ".get<" << cpr->struct_name << ">()) " << cpr->struct_name << "();";
-                auto ctor = cp_ctors[0];
+            //auto cp_ctors = coop::FindConstructor::rec_copy_constructor_map[record_decl];
+            //if(cp_ctors.empty())
+            //{
+            //    //there is no definition of a copy constructor - so we make one
+            //    ifs = std::ifstream (get_src_mod_file_name("existing_copy_constructor_deep_copy_emulation.cpp"));
+            //    std::string copy_constructor_code(
+            //        (std::istreambuf_iterator<char>(ifs)),
+            //        (std::istreambuf_iterator<char>()));
+            //    replaceAll(copy_constructor_code, RECORD_NAME, cpr->record_name);
+            //    replaceAll(copy_constructor_code, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+            //    replaceAll(copy_constructor_code, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
+            //    replaceAll(copy_constructor_code, STRUCT_NAME, cpr->struct_name);
+            //    cpr->missing_mandatory_public << copy_constructor_code;
+            //}else if(cpr->rec_info->record->hasUserDeclaredCopyConstructor()){
+            //    //there is a user defined copy constructor
+            //    //make sure it gets an initialized pointer to a cold struct instance
+            //    std::stringstream ss;   
+            //    ss << cpr->cold_data_ptr_name << " = new (" << cpr->free_list_instance_name_cold << ".get<" << cpr->struct_name << ">()) " << cpr->struct_name << "();";
+            //    auto ctor = cp_ctors[0];
 
-                auto r = get_rewriter(ctor->getASTContext());
-                r->InsertTextAfterToken(ctor->getBody()->getLocStart(), ss.str());
-            }
+            //    auto r = get_rewriter(ctor->getASTContext());
+            //    r->InsertTextAfterToken(ctor->getBody()->getLocStart(), ss.str());
+            //}
         }
 
         void handle_free_list_fragmentation(cold_pod_representation *cpr)
@@ -748,10 +730,10 @@ namespace coop{
             //define the statement, that calls the free method of the freelist with the pointer to the cold_struct
             std::stringstream free_stmt;
             free_stmt
-               << cpr->cold_data_ptr_name << "->~"
+               << cpr->cold_data_ptr_name << ".ptr->~"
                << cpr->struct_name << "();\n"
                << cpr->free_list_instance_name_cold
-               << ".free("<< cpr->cold_data_ptr_name <<");";
+               << ".free("<< cpr->cold_data_ptr_name <<".ptr);";
 
             if(dtor_decl){
                 const Stmt *dtor_body = cpr->rec_info->destructor_ptr->getBody();

@@ -837,19 +837,19 @@ int main(int argc, const char **argv) {
 					coop::src_mod::add_cpr_ref_to(&cpr);
 
 					//modifying/creating the record's important cops/move operators
-					coop::logger::out("modifying/creating operators");
-					coop::src_mod::handle_operators(&cpr);
+					//coop::logger::out("modifying/creating operators");
+					//coop::src_mod::handle_operators(&cpr);
 
 					//modify/create the record's constructors
-					coop::logger::out("modifying/creating constructors");
+					coop::logger::out("modifying constructors");
 					coop::src_mod::handle_constructors(&cpr);
 
 					coop::logger::out("injecting cold struct definitions");
 					coop::src_mod::inject_cold_struct(&cpr);
 					
 					//modify/create the record's destructor, to handle free-list fragmentation
-					coop::logger::out("modifying/creating destructor");
-					coop::src_mod::handle_free_list_fragmentation(&cpr);
+					//coop::logger::out("modifying/creating destructor");
+					//coop::src_mod::handle_free_list_fragmentation(&cpr);
 
 					//if this record is instantiated on the heap by using new anywhere, we
 					//should make sure, that the single instances are NOT distributed in memory but rather be allocated with spatial locality
