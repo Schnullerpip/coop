@@ -86,7 +86,7 @@ public:
     {
 		assert((begin != nullptr)
 			&& (end != nullptr)
-			&& ((end - begin) >= (block_size))
+			&& ((end - begin) >= static_cast<int>(block_size))
 			&& "invalid constructor arguments");
 
 		//how many elements fit in a line aka after how many do we need a new alignment offset

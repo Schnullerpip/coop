@@ -129,7 +129,6 @@ private:
 
 namespace AST_abbreviation
 {
-    //CLEAN THESE UP!!!!!!! TODO!!!!
     extern std::map<const FunctionDecl *, fl_node *> function_nodes;
     extern std::map<const Stmt *, fl_node *> loop_nodes;
 

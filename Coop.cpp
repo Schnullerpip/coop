@@ -643,9 +643,10 @@ int main(int argc, const char **argv) {
 
 
 
-				float heuristic = tolerant_average;
+				//float heuristic = tolerant_average;
+				float heuristic = (found_split ? p->highest_field_weight : 0);
 				for(auto f_w : rec.field_weights){
-					if(f_w.second < heuristic){
+					if(f_w.second <= heuristic){
 						rec.cold_fields.push_back(f_w.first);
 						coop::logger::log_stream << "[cold]\t" ;
 					}else{
