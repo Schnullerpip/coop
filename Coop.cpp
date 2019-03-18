@@ -575,15 +575,14 @@ int main(int argc, const char **argv) {
 				}while((p=p->next));
 
 				//now apply the heuristic to the groups to find a possible split
-				bool found_split = false;
-				//size_t Si_prev = significance_groups->type_size;
 				size_t CLS = l1.line_size;
 				float sum_max_k = significance_groups->highest_field_weight;
+				coop::SGroup *sgroup_with_highest_split_value = nullptr;
 				p=significance_groups->next; //splitting makes only sence from the 2nd group (we dont want to split everything...)
 				if(p){
 					coop::SGroup *prev = significance_groups;
 				do{
-					coop::logger::log_stream << "considering split: " << p->get_string();
+					coop::logger::log_stream << "Considering split at " << p->get_string();
 					coop::logger::out()++;
 
 					//Sizes S of assembled groups indices symbolize group range -> e.g. S0_i = size of groups from group 0 to group i (current p)
@@ -600,10 +599,10 @@ int main(int argc, const char **argv) {
 					coop::logger::out()--;
 
 					//first requirement -> either reduce number cachelines or number elements per cache-line (or both of course - we love both)
-					float cache_lines_per_element_with = S0_i*1.f/CLS;
-					float cache_lines_per_element_without = Si_prev*1.f/CLS;
-					float elements_per_cache_line_with = CLS*1.f/S0_i;
-					float elements_per_cache_line_without = CLS*1.f/Si_prev;
+					double cache_lines_per_element_with = static_cast<double>(S0_i)/CLS;
+					double cache_lines_per_element_without = static_cast<double>(Si_prev)/CLS;
+					double elements_per_cache_line_with = CLS/static_cast<double>(S0_i);
+					double elements_per_cache_line_without = CLS/static_cast<double>(Si_prev);
 
 					bool reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(elements_per_cache_line_without) > std::ceil(elements_per_cache_line_with)));
 					bool reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(cache_lines_per_element_without) < std::ceil(cache_lines_per_element_with)));
@@ -614,19 +613,20 @@ int main(int argc, const char **argv) {
 
 					if(reduces_cache_lines_per_element || reduces_elements_per_cache_line){
 						//check whether the cost/benefit ratio is good
-						//variable names refer to formula in thesis (s = savings for group i split; o = overhead for group i split)
-						float si = sum_max_k * (-sizeof(void*) + Si_n)/1.f*CLS;
-						float oi = (sum_max_field_weight - sum_max_k) * (1 + Si_n)/1.f*CLS;
+						//variable names refer to formula in thesis (si = savings for group i split; oi = overhead for group i split)
+						double si = sum_max_k * (static_cast<double>(Si_n) - sizeof(void*))/CLS;
+						double oi = (sum_max_field_weight - sum_max_k) * (1 + static_cast<double>(Si_n))/CLS;
 
-						coop::logger::log_stream << "s(gi): " << si << ", o(gi): " << oi;
+
+						//remember this groups split value
+						p->split_value = si - oi;
+
+						coop::logger::log_stream << "split benefit: " << p->split_value;
 						coop::logger::out();
 
-						bool Wi = si > oi;
-						if(Wi){
-							//this split is worht!
-							found_split = true;
-							coop::logger::depth--;
-							break;
+						//remember the group with the highest split value
+						if(!sgroup_with_highest_split_value || (p->split_value > sgroup_with_highest_split_value->split_value)){
+							sgroup_with_highest_split_value = p;
 						}
 					}
 
@@ -636,14 +636,14 @@ int main(int argc, const char **argv) {
 				} while((p=p->next));
 				}
 				//--------------------------significance ordering
-
+				//if one or more a beneficial splits were found, take the greatest and split the record there
 
 
 				float tolerant_average = average * (1-hot_split_tolerance);
 				float one_minus_avg = max - average;
 				float top_2 = std::max<float>(average, one_minus_avg)/2;
 				coop::logger::out("Heuristics:");
-				coop::logger::log_stream << "W [In use]: " << (found_split ? p->highest_field_weight : -1);
+				coop::logger::log_stream << "W [In use]: " << (sgroup_with_highest_split_value ? sgroup_with_highest_split_value->highest_field_weight : -1);
 				coop::logger::out();
 				coop::logger::log_stream << "avg: " << average;
 				coop::logger::out();
@@ -658,7 +658,7 @@ int main(int argc, const char **argv) {
 
 				//float heuristic = tolerant_average;
 				coop::logger::out("h/c\tname(size)\tfield weight:");
-				float heuristic = (found_split ? p->highest_field_weight : -1);
+				float heuristic = (sgroup_with_highest_split_value ? sgroup_with_highest_split_value->highest_field_weight : -1);
 				for(auto f_w : rec.field_weights){
 					if(f_w.second <= heuristic){
 						rec.cold_fields.push_back(f_w.first);

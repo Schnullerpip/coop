@@ -288,12 +288,6 @@ size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, size_t 
 
     size_t overhead = (sum % alignments[0]);
     size_t padding = (overhead > 0) ? (alignments[0] - overhead) : 0;
-    //for(auto s : alignments){
-    //    coop::logger::log_stream << s << ", ";
-    //}
-    //coop::logger::out();
-    //coop::logger::log_stream << "overhead: " << overhead << ", sum: " << sum << ", padding: " << padding << ", all: " << sum + padding;
-    //coop::logger::out();
 
     return sum + padding;
 }
@@ -306,7 +300,6 @@ size_t determine_size_with_padding(const clang::CXXRecordDecl *rec_decl)
     std::vector<std::pair<size_t, size_t>> size_alignment;
     for(auto f : rec_decl->fields())
     {
-        coop::logger::out(f->getNameAsString().c_str());
         size_t s = coop::get_sizeof_in_byte(f);
         size_t ali = s;
         if(f->getType().getTypePtr()->isArrayType()){
@@ -330,24 +323,17 @@ size_t determine_size_with_padding(const clang::CXXRecordDecl *rec_decl)
 
         size_t overhead = position % i_a;
 
-        coop::logger::log_stream << "pos: " << position << ", +(" << i_s << ", " << i_a << ")" << ",overhead: " << overhead;
-
         if(overhead > 0)
         {
             size_t padding = i_a - overhead;
             padding_sum += padding;
             position += padding;
-            coop::logger::log_stream << ", padding: " << padding;
         }
         position += i_s;
-        coop::logger::log_stream << ", now: " << position;
-        coop::logger::out();
     }
 
     size_t overhead = position % greatest_size;
     size_t ret_val = position + ((overhead > 0) ? (greatest_size - overhead):0);
-    coop::logger::log_stream << "overall: " << ret_val;
-    coop::logger::out();
     return ret_val;
 }
 }//namespace coop

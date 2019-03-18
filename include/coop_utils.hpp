@@ -244,6 +244,10 @@ struct SGroup
     unsigned int start_idx = 0, end_idx = 0;
     unsigned int type_size = 0;
     float highest_field_weight = 0;
+    //this field will hold the information to what extend the program would benefit from 
+    //splitting the original record starting with this very group
+    //The final split will be made at the group with the highest split-value if positive
+    double split_value = -1;
     SGroup *next = nullptr, *prev=nullptr;
 };
 
