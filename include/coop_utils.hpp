@@ -61,9 +61,9 @@ using namespace clang::ast_matchers;
 namespace coop{
 
     //will return the sizeof value for a field in Bits
-    int get_sizeof_in_bits(const FieldDecl* field);
+    size_t get_sizeof_in_bits(const FieldDecl* field);
     //will return the sizeof value for a field in Byte
-    int get_sizeof_in_byte(const FieldDecl* field);
+    size_t get_sizeof_in_byte(const FieldDecl* field);
 
     //will return the value of an environmentvariable - or "" 
     std::string getEnvVar( std::string const &);
@@ -164,6 +164,9 @@ namespace coop{
             //will hold the pointers to the cold fields
             std::vector<const clang::FieldDecl*>
                 cold_fields;
+            //will hold the pointers to the hot fields
+            std::vector<const clang::FieldDecl*>
+                hot_fields;
 
             //will hold the body of the record's destructor (if any) -> must be set manually!
             const CXXDestructorDecl *destructor_ptr = nullptr;
@@ -221,19 +224,35 @@ namespace coop{
     }
 }
 
+namespace coop{
+struct weight_size {
+    float weight;
+    size_t size_in_byte;
+    size_t alignment_requirement;
+};
+
 struct SGroup
 {
     SGroup(unsigned int start, unsigned int end):start_idx(start), end_idx(end){}
-    void print();
+    //actually copy the weight_size pairs from the container into the group so
+    //forthgoing we no longer only work with the indices but the actual data
+    void finalize(std::vector<coop::weight_size> &weights);
+    void print(bool recursive = false);
+    std::string get_string();
 
+    std::vector<weight_size> weights_and_sizes;
     unsigned int start_idx = 0, end_idx = 0;
     unsigned int type_size = 0;
     float highest_field_weight = 0;
     SGroup *next = nullptr, *prev=nullptr;
 };
 
-namespace coop{
-    SGroup * find_significance_groups(float *elements, unsigned int offset, unsigned int number_elements);
-}
+SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements);
+
+//determine the size of a set of groups regarding structure padding
+//until -> inclusive
+size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, size_t additional_field_size = 0);
+size_t determine_size_with_padding(const clang::CXXRecordDecl *rec_decl);
+}//namespace coop
 
 #endif

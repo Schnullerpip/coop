@@ -443,6 +443,45 @@ namespace coop{
                 ReplaceText(mem_expr->getMemberLoc(), ss.str());
         }
 
+        void reorder_hot_data(
+            cold_pod_representation *cpr)
+        {
+            coop::record::record_info *rec_info = cpr->rec_info;
+
+            //order the fields according to their alignment requirement
+            struct f_a{std::string field_text; size_t alignment;};
+            std::vector<f_a> field_alignments;
+
+            for(auto field : rec_info->hot_fields){
+                //get the declarations raw text
+                std::string text =  get_text(field, &field->getASTContext());
+                //get the field's alignment requirement
+                size_t alignment = coop::get_sizeof_in_byte(field);
+                {
+                    auto type = field->getType().getTypePtr();
+                    if(type->isArrayType())
+                    {
+                        alignment = field->getASTContext().getTypeSizeInChars(type->getArrayElementTypeNoTypeQual()).getQuantity();
+                    }                
+                }
+
+                field_alignments.push_back({text, alignment});
+
+                //remove it from the original record
+                coop::src_mod::remove_decl(field);
+            }
+
+            //order the field declarations (according to allignment requirements)
+            std::sort(field_alignments.begin(), field_alignments.end(), [](f_a a, f_a b){return a.alignment > b.alignment;});
+
+            //add the declarations (in their now optimal order to the original record)
+            cpr->missing_mandatory_public << "\n//Hot data Fields (descending order of alignment requirements)\n";
+            for(f_a &i : field_alignments)
+            {
+                cpr->missing_mandatory_public << i.field_text << ";\n";
+            }
+        }
+
         void handle_operators(cold_pod_representation *cpr)
         {
             auto record_decl = coop::global<CXXRecordDecl>::get_global(cpr->rec_info->record)->ptr;
