@@ -447,8 +447,9 @@ int main(int argc, const char **argv) {
 
 		for(int i = 0; i < num_records; ++i){
 			coop::record::record_info &rec = record_stats[i];
+			size_t record_size = coop::determine_size_with_padding(rec.record);
 
-			coop::logger::log_stream << Format::bold_on << "Record " << Format::bold_off << Format::blue << rec.record->getNameAsString().c_str() << Format::def;
+			coop::logger::log_stream << Format::bold_on << "Record " << Format::bold_off << Format::blue << rec.record->getNameAsString().c_str() << Format::def << "(" << record_size << "Byte)";
 			coop::logger::out()++;
 
 				float average = 0;
@@ -501,9 +502,6 @@ int main(int argc, const char **argv) {
 
 				record_field_weight_average[i] = average = average/num_fields;
 
-				coop::logger::log_stream << rec.record->getNameAsString().c_str() << "'s field weight average is: " << average;
-				coop::logger::out();
-			
 				/*with the field weight averages (FWAs) we can now narrow down on which members are hot and cold (presumably)
 				we also now know which fields are logically linked (loop/member matrix)
 					-> which fields show temporal locality
@@ -526,11 +524,6 @@ int main(int argc, const char **argv) {
 				*/
 
 				//now determine the record's hot/cold fields
-				//the record's field_weights is now ordered (descending) so the moment we find a cold value
-				//the following  values will also be cold
-				float tolerant_average = average * (1-hot_split_tolerance);
-				float one_minus_avg = max - average;
-				float top_2 = std::max<float>(average, one_minus_avg)/2;
 
 				//--------------------------significance ordering
 				//sort the elements in a descending order
@@ -538,24 +531,32 @@ int main(int argc, const char **argv) {
 					std::pair<const clang::FieldDecl*, float>& e1,
 					std::pair<const clang::FieldDecl*, float>& e2)
 					{return e1.second > e2.second;});
-				//get all the weights
+				//get all the weights/sizes/alignment requirements of the fields
 				std::vector<coop::weight_size> weights(rec.field_weights.size());
 				for(unsigned int i = 0; i < rec.field_weights.size(); ++i)
 				{
 					auto &f_w = rec.field_weights[i];
-					weights[i] = {f_w.second, coop::get_sizeof_in_byte(f_w.first)};
-				}
 
-				coop::SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size());
+					size_t field_size = coop::get_sizeof_in_byte(f_w.first);
+					size_t alignment_requirement = field_size;
+					auto type = f_w.first->getType().getTypePtr();
+					if(type->isArrayType()){
+						alignment_requirement = f_w.first->getASTContext().
+                 			getTypeSizeInChars(type->getArrayElementTypeNoTypeQual()).
+							getQuantity();
+					}
+					weights[i] = {f_w.second, field_size, alignment_requirement};
+				}
 
 				coop::logger::out("Significance groups:");
 				coop::logger::depth++;
-				significance_groups->print();
+				coop::SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size());
+
+				significance_groups->print(true);
 				coop::logger::depth--;
 
 
 				coop::SGroup *p = significance_groups;
-				size_t record_size = 0;
 				float sum_max_field_weight = 0;
 				//determine each groups traits (typesize, highest fieldweight)
 				do{
@@ -563,8 +564,6 @@ int main(int argc, const char **argv) {
 					for(unsigned int i = p->start_idx; i <= p->end_idx; ++i)
 					{
 						auto &f_w = rec.field_weights[i];
-						coop::logger::log_stream << "p->type_size: " << p->type_size << " += " << coop::get_sizeof_in_byte(f_w.first) << "("<<f_w.first->getNameAsString()<<")";
-						coop::logger::out();
 						p->type_size += coop::get_sizeof_in_byte(f_w.first);
 						if(f_w.second > p->highest_field_weight)
 						{
@@ -573,7 +572,6 @@ int main(int argc, const char **argv) {
 					}
 					p->finalize(weights);
 					sum_max_field_weight += p->highest_field_weight;
-					record_size += p->type_size;
 				}while((p=p->next));
 
 				//now apply the heuristic to the groups to find a possible split
@@ -582,65 +580,70 @@ int main(int argc, const char **argv) {
 				size_t CLS = l1.line_size;
 				float sum_max_k = significance_groups->highest_field_weight;
 				p=significance_groups->next; //splitting makes only sence from the 2nd group (we dont want to split everything...)
-				coop::logger::log_stream << "rec_size: " << record_size;
-				coop::logger::out();
 				if(p){
 					coop::SGroup *prev = significance_groups;
 				do{
-					coop::logger::out("iterating:");
-					p->print();
-					//size_t S0_i = Si_prev + p->type_size;
-					//size_t Si_n= record_size - Si_prev;
-					//coop::logger::log_stream << "S0_i = " << Si_prev << " + " << p->type_size;
-					//coop::logger::out();
-					//coop::logger::log_stream << "S0_i: " << S0_i << ", Si_n: " << Si_n;
-					//coop::logger::out();
+					coop::logger::log_stream << "considering split: " << p->get_string();
+					coop::logger::out()++;
 
-					size_t S0_i = coop::determine_size_with_padding(significance_groups, p);
-					size_t Si_prev = coop::determine_size_with_padding(significance_groups, prev);
-					size_t Si_n = coop::determine_size_with_padding(p, nullptr);
+					//Sizes S of assembled groups indices symbolize group range -> e.g. S0_i = size of groups from group 0 to group i (current p)
+					size_t S0_i = coop::determine_size_with_optimal_padding(significance_groups, p, sizeof(void*));
+					size_t Si_prev = coop::determine_size_with_optimal_padding(significance_groups, prev, sizeof(void*));
+					size_t Si_n = coop::determine_size_with_optimal_padding(p, nullptr);
 
-					//first requirement -> either reduce number cachelines or number elements per cache-line
-					bool reduces_cache_lines_per_element = false;
-					bool reduces_elements_per_cache_line = false;
+					coop::logger::out("Size:")++;
+					coop::logger::log_stream << "hot data with " << p->get_string()<< ": " << S0_i;
+					coop::logger::out();
+					coop::logger::log_stream << "hot data without " << p->get_string()<< ": " << Si_prev;
+					coop::logger::out();
+					coop::logger::log_stream << "cold without " << p->get_string()<<": " << Si_n;
+					coop::logger::out()--;
 
+					//first requirement -> either reduce number cachelines or number elements per cache-line (or both of course - we love both)
 					float cache_lines_per_element_with = S0_i*1.f/CLS;
 					float cache_lines_per_element_without = Si_prev*1.f/CLS;
 					float elements_per_cache_line_with = CLS*1.f/S0_i;
 					float elements_per_cache_line_without = CLS*1.f/Si_prev;
 
-					reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(elements_per_cache_line_without) > std::ceil(elements_per_cache_line_with)));
-					reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(cache_lines_per_element_without) < std::ceil(cache_lines_per_element_with)));
-
-					coop::logger::log_stream << "precon: " << reduces_elements_per_cache_line << " || " << reduces_cache_lines_per_element;
+					bool reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(elements_per_cache_line_without) > std::ceil(elements_per_cache_line_with)));
+					bool reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(cache_lines_per_element_without) < std::ceil(cache_lines_per_element_with)));
+					coop::logger::log_stream << "reduces elems per cache-line: " << (reduces_elements_per_cache_line ? "yes" : "no");
+					coop::logger::out();
+					coop::logger::log_stream << "reduces cache-lines per elem: " << (reduces_cache_lines_per_element ? "yes" : "no");
 					coop::logger::out();
 
 					if(reduces_cache_lines_per_element || reduces_elements_per_cache_line){
 						//check whether the cost/benefit ratio is good
-						float w = sum_max_k * (-sizeof(void*) + Si_n)/1.f*CLS;
-						float o = (sum_max_field_weight - sum_max_k) * (1 + Si_n)/1.f*CLS;
+						//variable names refer to formula in thesis (s = savings for group i split; o = overhead for group i split)
+						float si = sum_max_k * (-sizeof(void*) + Si_n)/1.f*CLS;
+						float oi = (sum_max_field_weight - sum_max_k) * (1 + Si_n)/1.f*CLS;
 
-						coop::logger::log_stream << w << ">" << o;
+						coop::logger::log_stream << "s(gi): " << si << ", o(gi): " << oi;
 						coop::logger::out();
 
-						bool W = w > o;
-						if(W){
+						bool Wi = si > oi;
+						if(Wi){
 							//this split is worht!
 							found_split = true;
+							coop::logger::depth--;
 							break;
 						}
 					}
 
-					Si_prev = S0_i;
 					sum_max_k += p->highest_field_weight;
 					prev = p;
+					coop::logger::depth--;
 				} while((p=p->next));
 				}
 				//--------------------------significance ordering
 
 
 
-				coop::logger::log_stream << "W: " << (found_split ? p->highest_field_weight : 0);
+				float tolerant_average = average * (1-hot_split_tolerance);
+				float one_minus_avg = max - average;
+				float top_2 = std::max<float>(average, one_minus_avg)/2;
+				coop::logger::out("Heuristics:");
+				coop::logger::log_stream << "W [In use]: " << (found_split ? p->highest_field_weight : -1);
 				coop::logger::out();
 				coop::logger::log_stream << "avg: " << average;
 				coop::logger::out();
@@ -651,15 +654,19 @@ int main(int argc, const char **argv) {
 
 
 
-				float heuristic = tolerant_average;
+				//float heuristic = tolerant_average;
+				coop::logger::out("h/c\tname(size)\tfield weight:");
+				float heuristic = (found_split ? p->highest_field_weight : -1);
 				for(auto f_w : rec.field_weights){
-					if(f_w.second < heuristic){
+					if(f_w.second <= heuristic){
 						rec.cold_fields.push_back(f_w.first);
 						coop::logger::log_stream << "[cold]\t" ;
 					}else{
+						rec.hot_fields.push_back(f_w.first);
 						coop::logger::log_stream << "[hot]\t";
 					}
-					coop::logger::log_stream << f_w.first->getNameAsString() << "\t" << f_w.second;
+					coop::logger::log_stream << f_w.first->getNameAsString() << "(" << 
+					coop::get_sizeof_in_byte(f_w.first) << " B) \t" << f_w.second;
 					coop::logger::out();
 				}
 			coop::logger::depth--;
@@ -670,7 +677,18 @@ int main(int argc, const char **argv) {
 	coop::logger::log_stream << Format::bold_on << "Applying Heuristic" << Format::bold_off << " (prioritize pairings)";
 	coop::logger::out(coop::logger::DONE);
 
-	if(apply_changes_to_source_files){
+	//collect all cold field declarations
+	//if there aren't any - we're done
+	std::vector<const FieldDecl*> cold_members;
+	for(int i = 0; i < num_records; ++i){
+		auto &recs_cold_fields = record_stats[i].cold_fields;
+		cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
+	}
+	if(cold_members.empty()){
+		coop::logger::out("No beneficial split opportunity was found");
+	}
+
+	if(apply_changes_to_source_files && (!cold_members.empty())){
 		coop::logger::log_stream << Format::bold_on << "Applying changes to source files" << Format::bold_off;
 		coop::logger::out(coop::logger::RUNNING)++;
 			//now that we know the hot/cold fields we now should process the source-file changes 
@@ -682,11 +700,6 @@ int main(int argc, const char **argv) {
 				- find occurences of splitted classes deletions
 				- find splitted classes' constructors/copy constructors/copyAssignmentOperators
 			*/
-			std::vector<const FieldDecl*> cold_members;
-			for(int i = 0; i < num_records; ++i){
-				auto &recs_cold_fields = record_stats[i].cold_fields;
-				cold_members.insert(cold_members.end(), recs_cold_fields.begin(), recs_cold_fields.end());
-			}
 
 			MatchFinder finder;
 
@@ -824,7 +837,7 @@ int main(int argc, const char **argv) {
 					//	number_cold_data_elements
 					//);
 
-					coop::logger::out("extracting cold fields");
+					coop::logger::out("Extracting cold fields");
 					//get rid of all the cold field-declarations in the records
 					// AND
 					//change all appearances of the cold data fields to be referenced by the record's instance
@@ -839,6 +852,8 @@ int main(int argc, const char **argv) {
 								field_usage.ast_context_ptr);
 						}
 					}
+					coop::logger::out("Reordering hot data");
+					coop::src_mod::reorder_hot_data(&cpr);
 
 					//give the record a reference to an instance of this new cold_data_struct
 					coop::logger::out("adding freelist pointr to class definition");

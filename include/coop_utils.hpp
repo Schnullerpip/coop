@@ -164,6 +164,9 @@ namespace coop{
             //will hold the pointers to the cold fields
             std::vector<const clang::FieldDecl*>
                 cold_fields;
+            //will hold the pointers to the hot fields
+            std::vector<const clang::FieldDecl*>
+                hot_fields;
 
             //will hold the body of the record's destructor (if any) -> must be set manually!
             const CXXDestructorDecl *destructor_ptr = nullptr;
@@ -225,6 +228,7 @@ namespace coop{
 struct weight_size {
     float weight;
     size_t size_in_byte;
+    size_t alignment_requirement;
 };
 
 struct SGroup
@@ -233,7 +237,8 @@ struct SGroup
     //actually copy the weight_size pairs from the container into the group so
     //forthgoing we no longer only work with the indices but the actual data
     void finalize(std::vector<coop::weight_size> &weights);
-    void print();
+    void print(bool recursive = false);
+    std::string get_string();
 
     std::vector<weight_size> weights_and_sizes;
     unsigned int start_idx = 0, end_idx = 0;
@@ -246,7 +251,8 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
 
 //determine the size of a set of groups regarding structure padding
 //until -> inclusive
-size_t determine_size_with_padding(SGroup *begin, SGroup *until);
+size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, size_t additional_field_size = 0);
+size_t determine_size_with_padding(const clang::CXXRecordDecl *rec_decl);
 }//namespace coop
 
 #endif

@@ -116,21 +116,19 @@ namespace coop {
 void SGroup::finalize(std::vector<coop::weight_size> &weights)
 {
     weights_and_sizes.insert(weights_and_sizes.begin(), weights.begin()+start_idx, weights.begin()+end_idx+1);
-    coop::logger::log_stream << "weights in group " << start_idx << " - " << end_idx;
-    coop::logger::out()++;
-    for(auto ws : weights_and_sizes)
-    {
-        coop::logger::log_stream << ws.size_in_byte;
-        coop::logger::out();
-    }
-    coop::logger::depth--;
 }
-void SGroup::print()
+std::string SGroup::get_string()
 {
-    coop::logger::log_stream << "[" << start_idx << " - " << end_idx << "]";
-    if(next){
+    std::stringstream ss;
+    ss << "[" << start_idx << " - " << end_idx << "]";
+    return ss.str();
+}
+void SGroup::print(bool recursive)
+{
+    coop::logger::log_stream << get_string();
+    if(next && recursive){
         coop::logger::log_stream << " -> ";
-        next->print();
+        next->print(recursive);
     }
     else
     {
@@ -141,10 +139,6 @@ void SGroup::print()
 
 
 SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements){
-    coop::logger::log_stream << "call:find_significance_groups(" << elements << "," <<offset<< "," << number_elements << ")";
-    coop::logger::out();
-    coop::logger::depth+=1;
-
     coop::logger::log_stream << "x = {";
     for(unsigned int i = offset; i < offset+number_elements; ++i)
     {
@@ -157,7 +151,6 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
     if(number_elements < 3){
         //there are not enough field weights to determine a relative significance
         //just make the leftovers a group and return it
-        coop::logger::depth-=1;
         return new SGroup(offset,offset+number_elements-1);
     }
 
@@ -166,8 +159,6 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
 
     //get IQR Q1 and Q2
     float median = get_median(x, n);
-    coop::logger::log_stream << "median: " << median;
-    coop::logger::out();
     float q1, q2;
         q1 = get_median(x, n/2);
     if(n%2==0){
@@ -180,11 +171,6 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
     float IQR = q1 - q2;
     float spike_bound_top = median+IQR/2+IQR;
     float spike_bound_bottom = median-IQR/2-IQR;
-
-    coop::logger::log_stream << "q1: " << q1 << "; q2: " << q2;
-    coop::logger::out();
-    coop::logger::log_stream << "q1+IQR: " << spike_bound_top << "; q2-IQR: " << spike_bound_bottom;
-    coop::logger::out();
 
     //determine whether we need another recursion (if not all elements can be found inside our tolerance range)
     //for each significance range (over top bound, inside top/bottom bounds, under bottom bounds) invoke tha routine another time.
@@ -202,23 +188,18 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
         if((!found_high_spikes) && (i > 0) && (x[i].weight < spike_bound_top) && (x[i-1].weight > spike_bound_top)){
             //we have found the border that seperates the high spikes from the 'normal' data
             found_high_spikes = true;
-            coop::logger::out("found high spikes");
             over_top = find_significance_groups(x, 0, i);
             mid_values_start_idx = i;
         }
 
         if(x[i].weight < spike_bound_bottom){
             //we found the border that separates the 'normal' data from the low spikes
-            coop::logger::out("found low spikes");
             under_bottom = find_significance_groups(x, i, n-i);
             mid_values_end_idx = i-1;
             break;
         }
     }
 
-    coop::logger::log_stream << "MID VALUES: " << mid_values_start_idx << " " << mid_values_end_idx;
-    coop::logger::out();
-    
     //now determine the significance groups for our middle segment
     //get all the deltas
     unsigned int num_deltas = mid_values_end_idx-mid_values_start_idx;
@@ -231,13 +212,6 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
         deltas[o] = std::abs(elements[idx].weight - elements[idx-1].weight);
     }
 
-    coop::logger::log_stream << "d = {";
-    for(unsigned int i = 0; i < deltas.size(); ++i){
-        coop::logger::log_stream << deltas[i] << ((i < (deltas.size()-1)) ? ", " : "");
-    }
-    coop::logger::log_stream << "}";
-    coop::logger::out();
-
     //get avg delta
     float average_diff = 0;
     for(unsigned int i = 1; i < deltas.size(); ++i)
@@ -246,8 +220,6 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
     }
     average_diff/=deltas.size()-1;
     deltas[0] = average_diff+1;//so the first group will always be made
-    coop::logger::log_stream << "delta avg: " << average_diff;
-    coop::logger::out();
 
     //each new found delta that is above the average is considered the start of a new group
     SGroup *last = nullptr;
@@ -256,14 +228,10 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
         if(deltas[o] > average_diff)//new group found
         {
             if(!inside_bounds){
-                coop::logger::log_stream << "new SGroup " << i << " - " << mid_values_end_idx;
-                coop::logger::out();
                 inside_bounds = new SGroup(i, mid_values_end_idx);
                 last = inside_bounds;
             }else{
                 last->next = new SGroup(i, mid_values_end_idx);
-                coop::logger::log_stream << "new SGroup " << i << " - " << mid_values_end_idx;
-                coop::logger::out();
                 last->end_idx=i-1;
                 last = last->next;
             }
@@ -282,11 +250,6 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
     //if there were values exceeding the lower bounds -> they have been made a group on their own. connect them to this mid segment
     last->next = under_bottom;
 
-    if(!over_top && !inside_bounds && !under_bottom){
-        coop::logger::out("NO SIG GROUPS FOUND IN RECURSION");
-    }
-
-    coop::logger::depth-=1;
     if(over_top){
         return over_top;
     }else{
@@ -294,40 +257,98 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
     }
 }
 
-//until -> exclusive
-size_t determine_size_with_padding(SGroup *begin, SGroup *until)
+//determines the size of a set of Significance Groups regarding structure padding
+//we will order fields according to their sizes in Byte to reduce structure padding
+//param until -> inclusive
+//param additional_field_size -> if we consider a possible hot split we need to be aware of the additional pointer's size/alignment
+size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, size_t additional_field_size)
 {
     //collect all sizes -> bring em in descending order (optimal padding) -> determine padding
-    std::vector<size_t> sizes;
+    std::vector<size_t> alignments;
     size_t sum = 0;
-    coop::logger::out("start");
-    for(SGroup *p = begin; (p != nullptr); p = p->next)
+
+    alignments.push_back(additional_field_size);
+    sum += additional_field_size;
+
+    SGroup *end_cond = (until ? until->next : nullptr);
+    for(SGroup *p = begin; p != end_cond; p = p->next)
     {
-        if(!p)coop::logger::out("p is null");
-        coop::logger::log_stream << "group: " << p->start_idx << " - " << p->end_idx;
-        coop::logger::out();
         //each group has several weights and sizes
         for(auto &w_s : p->weights_and_sizes)
         {
-            coop::logger::log_stream << "size: " << w_s.size_in_byte;
-            coop::logger::out();
-            sizes.push_back(w_s.size_in_byte);
+            //consider that alignment, might diverge from size (array types)
+            size_t size = w_s.size_in_byte;
+            size_t alignment = w_s.alignment_requirement;
+            alignments.push_back(alignment);
             sum += w_s.size_in_byte;
         }
-        if(p->next == until)break;
     }
 
     //we have all the sizes (in  byte) of the groups -> order them
-    std::sort(sizes.begin(), sizes.end(), [](size_t a, size_t b)->bool{return a>b;});
+    std::sort(alignments.begin(), alignments.end(), [](size_t a, size_t b)->bool{return a > b;});
 
-    coop::logger::log_stream << "sizes size: " << sizes.size();
-    coop::logger::out();
-    coop::logger::log_stream << "sizes[0]: " << sizes[0];
-    coop::logger::out();
-    size_t padding = sizes[0] - (sum % sizes[0]);
-    coop::logger::log_stream << "padding: " << padding << ", all: " << sum + padding;
-    coop::logger::out();
+    size_t overhead = (sum % alignments[0]);
+    size_t padding = (overhead > 0) ? (alignments[0] - overhead) : 0;
+    //for(auto s : alignments){
+    //    coop::logger::log_stream << s << ", ";
+    //}
+    //coop::logger::out();
+    //coop::logger::log_stream << "overhead: " << overhead << ", sum: " << sum << ", padding: " << padding << ", all: " << sum + padding;
+    //coop::logger::out();
 
     return sum + padding;
+}
+
+
+size_t determine_size_with_padding(const clang::CXXRecordDecl *rec_decl)
+{
+    size_t greatest_size = 0;
+    //iterate the fields to find the greatest alignment requirement (record will be self aligned on that)
+    std::vector<std::pair<size_t, size_t>> size_alignment;
+    for(auto f : rec_decl->fields())
+    {
+        coop::logger::out(f->getNameAsString().c_str());
+        size_t s = coop::get_sizeof_in_byte(f);
+        size_t ali = s;
+        if(f->getType().getTypePtr()->isArrayType()){
+            auto array_type_size = f->getASTContext().
+                 getTypeSizeInChars(f->getType().getTypePtr()->getArrayElementTypeNoTypeQual()).
+                 getQuantity();
+            ali = array_type_size;
+        }
+        if(ali > greatest_size) greatest_size = ali;
+        size_alignment.push_back({s, ali});
+    }
+
+    size_t padding_sum = 0;
+    //now that we know the type sizes and the greatest type size we can determine the paddings
+    size_t position = 0;
+    for(size_t i = 0; i < size_alignment.size(); i++)
+    {
+        //check whether this self aligned field needs padding
+        size_t i_s = size_alignment[i].first;
+        size_t i_a = size_alignment[i].second;
+
+        size_t overhead = position % i_a;
+
+        coop::logger::log_stream << "pos: " << position << ", +(" << i_s << ", " << i_a << ")" << ",overhead: " << overhead;
+
+        if(overhead > 0)
+        {
+            size_t padding = i_a - overhead;
+            padding_sum += padding;
+            position += padding;
+            coop::logger::log_stream << ", padding: " << padding;
+        }
+        position += i_s;
+        coop::logger::log_stream << ", now: " << position;
+        coop::logger::out();
+    }
+
+    size_t overhead = position % greatest_size;
+    size_t ret_val = position + ((overhead > 0) ? (greatest_size - overhead):0);
+    coop::logger::log_stream << "overall: " << ret_val;
+    coop::logger::out();
+    return ret_val;
 }
 }//namespace coop

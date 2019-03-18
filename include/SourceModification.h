@@ -99,6 +99,10 @@ namespace coop {
             ASTContext *ast_context
         );
 
+        void reorder_hot_data(
+            cold_pod_representation *cpr
+        );
+
         void handle_constructors(
             cold_pod_representation *cpr
         );
