@@ -10,6 +10,17 @@ size_t coop::get_sizeof_in_byte(const FieldDecl* field){
     return get_sizeof_in_bits(field)/8;
 }
 
+size_t coop::get_alignment_of(const FieldDecl *field)
+{
+    auto type = field->getType().getTypePtr();
+    if(type->isArrayType()){
+        return field->getASTContext().
+                getTypeSizeInChars(type->getArrayElementTypeNoTypeQual()).
+                getQuantity();
+    }
+    return get_sizeof_in_byte(field);
+}
+
 std::string coop::getEnvVar( std::string const & key )
 {
     char * val = getenv( key.c_str() );
@@ -120,7 +131,9 @@ void SGroup::finalize(std::vector<coop::weight_size> &weights)
 std::string SGroup::get_string()
 {
     std::stringstream ss;
-    ss << "[" << start_idx << " - " << end_idx << "]";
+    ss << "[" << start_idx;
+    if(start_idx != end_idx){ ss << " - " << end_idx; }
+    ss << "]";
     return ss.str();
 }
 void SGroup::print(bool recursive)
@@ -139,13 +152,13 @@ void SGroup::print(bool recursive)
 
 
 SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements){
-    coop::logger::log_stream << "x = {";
-    for(unsigned int i = offset; i < offset+number_elements; ++i)
-    {
-        coop::logger::log_stream << elements[i].weight << ((i < (offset+number_elements-1)) ? ", " : "");
-    }
-    coop::logger::log_stream << "}";
-    coop::logger::out();
+    //coop::logger::log_stream << "x = {";
+    //for(unsigned int i = offset; i < offset+number_elements; ++i)
+    //{
+    //    coop::logger::log_stream << elements[i].weight << ((i < (offset+number_elements-1)) ? ", " : "");
+    //}
+    //coop::logger::log_stream << "}";
+    //coop::logger::out();
 
 
     if(number_elements < 3){
@@ -261,14 +274,23 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
 //we will order fields according to their sizes in Byte to reduce structure padding
 //param until -> inclusive
 //param additional_field_size -> if we consider a possible hot split we need to be aware of the additional pointer's size/alignment
-size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, size_t additional_field_size)
+size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, std::vector<size_t> additional_alignments, std::vector<const clang::FieldDecl*> additional_fields)
 {
     //collect all sizes -> bring em in descending order (optimal padding) -> determine padding
     std::vector<size_t> alignments;
     size_t sum = 0;
 
-    alignments.push_back(additional_field_size);
-    sum += additional_field_size;
+    alignments.insert(alignments.end(), additional_alignments.begin(), additional_alignments.end());
+    for(auto s : additional_alignments)
+        sum += s;
+
+    for(auto f : additional_fields)
+    {
+        size_t field_size = coop::get_sizeof_in_byte(f);
+        size_t alignment = coop::get_alignment_of(f);
+        sum += field_size;
+        alignments.push_back(alignment);
+    }
 
     SGroup *end_cond = (until ? until->next : nullptr);
     for(SGroup *p = begin; p != end_cond; p = p->next)
@@ -301,13 +323,7 @@ size_t determine_size_with_padding(const clang::CXXRecordDecl *rec_decl)
     for(auto f : rec_decl->fields())
     {
         size_t s = coop::get_sizeof_in_byte(f);
-        size_t ali = s;
-        if(f->getType().getTypePtr()->isArrayType()){
-            auto array_type_size = f->getASTContext().
-                 getTypeSizeInChars(f->getType().getTypePtr()->getArrayElementTypeNoTypeQual()).
-                 getQuantity();
-            ali = array_type_size;
-        }
+        size_t ali = coop::get_alignment_of(f);
         if(ali > greatest_size) greatest_size = ali;
         size_alignment.push_back({s, ali});
     }

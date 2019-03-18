@@ -202,53 +202,8 @@ namespace coop{
                 std::vector<const FieldDecl*> in_class_initialized_fields;
                 std::stringstream constructors;
                 for(auto field : cpr->rec_info->cold_fields){
-
-                    //bool is_array_type = field->getType().getTypePtr()->isArrayType();
-                    ////ss << get_text(field, &field->getASTContext());
-                    //auto type = field->getType();
-                    //type.removeLocalConst();
-                    //if(is_array_type)
-                    //{
-                    //    char buff[1024];
-                    //    const char *type_begin = type.getAsString().c_str();
-                    //    const char *arr_begin = coop::naming::get_from_start_until(type_begin, '[')-1;
-                    //    buff[arr_begin-type_begin] = '\0';
-                    //    memcpy(buff, type_begin, arr_begin - type_begin);
-                    //    coop::logger::log_stream << type_begin << "->'" << buff << "'";
-                    //    coop::logger::out();
-                    //    coop::logger::log_stream << arr_begin;
-                    //    coop::logger::out();
-                    //    ss << buff << " " << field->getNameAsString() << (arr_begin-1) << ";\n";
-                    //}else{
-                    //    ss << type.getAsString() << " " << field->getNameAsString() << ";\n";
-                    //}
-                    //if(*cpr->rec_info->cold_fields.end() != field){
-                    //    ss << ";\n";
-                    //}
-
-                    //if(field->hasInClassInitializer()){
-                    //    in_class_initialized_fields.push_back(field);
-                    //}
                     ss << get_text(field, &field->getASTContext()) << ";\n";
                 }
-
-                //for(size_t i = 0; i < in_class_initialized_fields.size(); ++i){
-                //    const FieldDecl *field = in_class_initialized_fields[i];
-                //    constructors << field->getNameAsString() << "("
-                //        << coop::naming::get_from_end_until(get_text(field->getInClassInitializer(), &field->getASTContext()).c_str(), '=') << ")";
-                //    if(i < in_class_initialized_fields.size()-1){
-                //        constructors << ", ";
-                //    }
-                //}
-                //replaceAll(tmpl_file_content, FIELD_INITIALIZERS, constructors.str());
-
-                //for(auto ctor : cpr->const_ctors)
-                //{
-                //    auto ctxt = ctor.first;
-                //    auto &inis = ctor.second;
-                //    constructors << create_constructor(cpr->struct_name, ctxt, inis) << "\n";
-                //}
-                //replaceAll(tmpl_file_content, CONSTRUCTORS, constructors.str());
             }
 
             replaceAll(tmpl_file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
@@ -356,27 +311,8 @@ namespace coop{
 
                 replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
                 replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-                //cpr->missing_mandatory_private << file_content;
                 cpr->missing_mandatory_public << file_content;
             }
-
-            //{//adding the public access method to the record
-            //    std::stringstream ss;
-            //    ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "access_method_to_cold_data.cpp";
-            //    std::ifstream ifs(ss.str());
-            //    std::string file_content(
-            //        (std::istreambuf_iterator<char>(ifs)),
-            //        (std::istreambuf_iterator<char>()));
-
-            //    replaceAll(file_content, STRUCT_NAME, cpr->struct_name);
-            //    replaceAll(file_content, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
-            //    replaceAll(file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-            //    cpr->missing_mandatory_public << file_content;
-            //}
-            //this function will only be called if ri->cold_fields is not empty, so we can safely take its first element
-            //we simply need some place to insert the reference to the cold data to... 
-            //get_rewriter(cpr->rec_info->record->getASTContext())->
-            //    InsertTextBefore(cpr->rec_info->cold_fields[0]->getLocStart(), file_content);
         }
 
         void add_memory_allocation_to(
@@ -449,6 +385,17 @@ namespace coop{
         {
             coop::record::record_info *rec_info = cpr->rec_info;
 
+            //assemble the pointer to the cold data struct
+            std::stringstream ss;
+            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "pointer_to_cold_data.cpp";
+            std::ifstream ifs(ss.str());
+            std::string cold_data_ptr_text(
+                (std::istreambuf_iterator<char>(ifs)),
+                (std::istreambuf_iterator<char>()));
+
+            replaceAll(cold_data_ptr_text, STRUCT_NAME, cpr->struct_name);
+            replaceAll(cold_data_ptr_text, COLD_DATA_PTR_NAME, cpr->cold_data_ptr_name);
+
             //order the fields according to their alignment requirement
             struct f_a{std::string field_text; size_t alignment;};
             std::vector<f_a> field_alignments;
@@ -457,20 +404,16 @@ namespace coop{
                 //get the declarations raw text
                 std::string text =  get_text(field, &field->getASTContext());
                 //get the field's alignment requirement
-                size_t alignment = coop::get_sizeof_in_byte(field);
-                {
-                    auto type = field->getType().getTypePtr();
-                    if(type->isArrayType())
-                    {
-                        alignment = field->getASTContext().getTypeSizeInChars(type->getArrayElementTypeNoTypeQual()).getQuantity();
-                    }                
-                }
+                size_t alignment = coop::get_alignment_of(field);
 
                 field_alignments.push_back({text, alignment});
 
-                //remove it from the original record
+                //remove the field declaration from the original record
                 coop::src_mod::remove_decl(field);
             }
+
+            //make sure the pointer to the cold data struct is included
+            field_alignments.push_back({cold_data_ptr_text, sizeof(void*)});
 
             //order the field declarations (according to allignment requirements)
             std::sort(field_alignments.begin(), field_alignments.end(), [](f_a a, f_a b){return a.alignment > b.alignment;});

@@ -538,13 +538,7 @@ int main(int argc, const char **argv) {
 					auto &f_w = rec.field_weights[i];
 
 					size_t field_size = coop::get_sizeof_in_byte(f_w.first);
-					size_t alignment_requirement = field_size;
-					auto type = f_w.first->getType().getTypePtr();
-					if(type->isArrayType()){
-						alignment_requirement = f_w.first->getASTContext().
-                 			getTypeSizeInChars(type->getArrayElementTypeNoTypeQual()).
-							getQuantity();
-					}
+					size_t alignment_requirement = coop::get_alignment_of(f_w.first);
 					weights[i] = {f_w.second, field_size, alignment_requirement};
 				}
 
@@ -572,6 +566,10 @@ int main(int argc, const char **argv) {
 					}
 					p->finalize(weights);
 					sum_max_field_weight += p->highest_field_weight;
+					//initialize this group as the next's predecessor
+					if(p->next){
+						p->next->prev = p;
+					}
 				}while((p=p->next));
 
 				//now apply the heuristic to the groups to find a possible split
@@ -580,50 +578,45 @@ int main(int argc, const char **argv) {
 				coop::SGroup *sgroup_with_highest_split_value = nullptr;
 				p=significance_groups->next; //splitting makes only sence from the 2nd group (we dont want to split everything...)
 				if(p){
-					coop::SGroup *prev = significance_groups;
 				do{
-					coop::logger::log_stream << "Considering split at " << p->get_string();
-					coop::logger::out()++;
+					//coop::logger::log_stream << "Considering split at " << p->get_string();
+					//coop::logger::out()++;
 
 					//Sizes S of assembled groups indices symbolize group range -> e.g. S0_i = size of groups from group 0 to group i (current p)
-					size_t S0_i = coop::determine_size_with_optimal_padding(significance_groups, p, sizeof(void*));
-					size_t Si_prev = coop::determine_size_with_optimal_padding(significance_groups, prev, sizeof(void*));
+					size_t S0_i = coop::determine_size_with_optimal_padding(significance_groups, p, {sizeof(void*)});
+					size_t S0_prev = coop::determine_size_with_optimal_padding(significance_groups, p->prev, {sizeof(void*)});
 					size_t Si_n = coop::determine_size_with_optimal_padding(p, nullptr);
-
-					coop::logger::out("Size:")++;
-					coop::logger::log_stream << "hot data with " << p->get_string()<< ": " << S0_i;
-					coop::logger::out();
-					coop::logger::log_stream << "hot data without " << p->get_string()<< ": " << Si_prev;
-					coop::logger::out();
-					coop::logger::log_stream << "cold with " << p->get_string()<<": " << Si_n;
-					coop::logger::out()--;
 
 					//first requirement -> either reduce number cachelines or number elements per cache-line (or both of course - we love both)
 					double cache_lines_per_element_with = static_cast<double>(S0_i)/CLS;
-					double cache_lines_per_element_without = static_cast<double>(Si_prev)/CLS;
+					double cache_lines_per_element_without = static_cast<double>(S0_prev)/CLS;
 					double elements_per_cache_line_with = CLS/static_cast<double>(S0_i);
-					double elements_per_cache_line_without = CLS/static_cast<double>(Si_prev);
+					double elements_per_cache_line_without = CLS/static_cast<double>(S0_prev);
 
-					bool reduces_elements_per_cache_line = ((record_size < CLS) && (std::ceil(elements_per_cache_line_without) > std::ceil(elements_per_cache_line_with)));
+					bool reduces_elements_per_cache_line = ((record_size < CLS) && (std::floor(elements_per_cache_line_without) > std::floor(elements_per_cache_line_with)));
 					bool reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(cache_lines_per_element_without) < std::ceil(cache_lines_per_element_with)));
-					coop::logger::log_stream << "reduces elems per cache-line: " << (reduces_elements_per_cache_line ? "yes" : "no");
-					coop::logger::out();
-					coop::logger::log_stream << "reduces cache-lines per elem: " << (reduces_cache_lines_per_element ? "yes" : "no");
-					coop::logger::out();
 
+					//coop::logger::out("Size:")++;
+					//coop::logger::log_stream << "hot data with " << p->get_string()<< ": " << S0_i;
+					//coop::logger::out();
+					//coop::logger::log_stream << "hot data without " << p->get_string()<< ": " << S0_prev;
+					//coop::logger::out();
+					//coop::logger::log_stream << "cold with " << p->get_string()<<": " << Si_n;
+					//coop::logger::out()--;
+
+					//coop::logger::log_stream << "reduces elems per cache-line: " << (reduces_elements_per_cache_line ? "yes" : "no");
+					//coop::logger::out();
+					//coop::logger::log_stream << "reduces cache-lines per elem: " << (reduces_cache_lines_per_element ? "yes" : "no");
+					//coop::logger::out();
 					if(reduces_cache_lines_per_element || reduces_elements_per_cache_line){
 						//check whether the cost/benefit ratio is good
 						//variable names refer to formula in thesis (si = savings for group i split; oi = overhead for group i split)
 						double si = sum_max_k * (static_cast<double>(Si_n) - sizeof(void*))/CLS;
 						double oi = (sum_max_field_weight - sum_max_k) * (1 + static_cast<double>(Si_n))/CLS;
 
-
 						//remember this groups split value
 						p->split_value = si - oi;
-
-						coop::logger::log_stream << "split benefit: " << p->split_value;
-						coop::logger::out();
-
+						p->size_with_padding_for_split_here = S0_prev;
 						//remember the group with the highest split value
 						if(!sgroup_with_highest_split_value || (p->split_value > sgroup_with_highest_split_value->split_value)){
 							sgroup_with_highest_split_value = p;
@@ -631,13 +624,11 @@ int main(int argc, const char **argv) {
 					}
 
 					sum_max_k += p->highest_field_weight;
-					prev = p;
-					coop::logger::depth--;
+					//coop::logger::depth--;
 				} while((p=p->next));
 				}
 				//--------------------------significance ordering
 				//if one or more a beneficial splits were found, take the greatest and split the record there
-
 
 				float tolerant_average = average * (1-hot_split_tolerance);
 				float one_minus_avg = max - average;
@@ -654,15 +645,67 @@ int main(int argc, const char **argv) {
 				coop::logger::log_stream << "top/2: " << top_2;
 				coop::logger::out();
 
+				//check - whether we have space (padding) to include some cold fields
+				int hot_instances_per_cache_line = -1;
+				int cache_lines_per_hot_instance = -1;
+				std::vector<const clang::FieldDecl *> cold_fillers = {};
+				size_t padding = 0;
+				if(sgroup_with_highest_split_value){
+					hot_instances_per_cache_line = std::floor(CLS*1.f/sgroup_with_highest_split_value->size_with_padding_for_split_here);
+					cache_lines_per_hot_instance = std::ceil(sgroup_with_highest_split_value->size_with_padding_for_split_here*1.f/CLS);
+					if(hot_instances_per_cache_line >= 1){
+						padding = CLS - sgroup_with_highest_split_value->size_with_padding_for_split_here;
+					}else{
+						padding = cache_lines_per_hot_instance * CLS - sgroup_with_highest_split_value->size_with_padding_for_split_here;
+					}
+				}
+				//coop::logger::log_stream << "Filler space left: " << padding;
+				//coop::logger::out();
 
-
-				//float heuristic = tolerant_average;
-				coop::logger::out("h/c\tname(size)\tfield weight:");
+				//the most important fields are the ones in the group, that mark the optimal split point try them
+				coop::logger::out("h/f/c\tname(size)\tfield weight:");
 				float heuristic = (sgroup_with_highest_split_value ? sgroup_with_highest_split_value->highest_field_weight : -1);
 				for(auto f_w : rec.field_weights){
 					if(f_w.second <= heuristic){
-						rec.cold_fields.push_back(f_w.first);
-						coop::logger::log_stream << "[cold]\t" ;
+						//normally this field would be considered cold - however if there is padding/space left
+						//check whether we can fit it in the hot data.
+						size_t field_size = coop::get_sizeof_in_byte(f_w.first);
+						size_t size_required = field_size*((hot_instances_per_cache_line >= 1) ? hot_instances_per_cache_line : cache_lines_per_hot_instance);
+						if((padding > 0) && (padding > size_required)){
+							//coop::logger::log_stream << "required size for: " << f_w.first->getNameAsString() << " = " << size_required << " (" << padding << " available)";
+							//coop::logger::out();
+							//looking good - but one final test:
+							//the insertion of this cold field could possibly mean arbitrary changes to the records padding.
+							//check whether or not including the cold field will ultimately deteriorate the instance : CLS ratio
+							std::vector<const clang::FieldDecl *> fillers_plus_this = cold_fillers;
+							fillers_plus_this.push_back(f_w.first);
+							size_t new_size = coop::determine_size_with_optimal_padding(significance_groups, sgroup_with_highest_split_value->prev, {sizeof(void*)}, fillers_plus_this);
+
+							int new_hot_instances_per_cache_line = std::floor(CLS*1.f/new_size);
+							int new_cache_lines_per_hot_instance = std::ceil(new_size*1.f/CLS);
+
+							//coop::logger::log_stream << "epc_o: " << hot_instances_per_cache_line << " >= " << "epc_n: " << new_hot_instances_per_cache_line;
+							//coop::logger::out();
+							//coop::logger::log_stream << "cpe_o: " << cache_lines_per_hot_instance << " <= " << "cpe_n: " << new_cache_lines_per_hot_instance;
+							//coop::logger::out();
+
+							if( (new_hot_instances_per_cache_line <= hot_instances_per_cache_line) || 
+								(new_cache_lines_per_hot_instance >= cache_lines_per_hot_instance))
+							{
+								rec.hot_fields.push_back(f_w.first);
+								cold_fillers.push_back(f_w.first);
+								coop::logger::log_stream << "[filled]\t";
+								padding -= size_required;
+							}else{
+								coop::logger::out("but padding ruins it...");
+								rec.cold_fields.push_back(f_w.first);
+								coop::logger::log_stream << "[cold]\t" ;
+							}
+						}else{
+							//the field weight determines it cold and there is not enough padding to fit this field in the hot data.
+							rec.cold_fields.push_back(f_w.first);
+							coop::logger::log_stream << "[cold]\t" ;
+						}
 					}else{
 						rec.hot_fields.push_back(f_w.first);
 						coop::logger::log_stream << "[hot]\t";
@@ -831,14 +874,6 @@ int main(int argc, const char **argv) {
 						coop::src_mod::create_free_list_for(&cpr);
 					}
 
-					////TODO this is not active....!
-					//coop::logger::out("injecting memory allocations for the freelistinstances");
-					//coop::src_mod::add_memory_allocation_to(
-					//	&cpr,
-					//	number_hot_data_elements,
-					//	number_cold_data_elements
-					//);
-
 					coop::logger::out("Extracting cold fields");
 					//get rid of all the cold field-declarations in the records
 					// AND
@@ -854,16 +889,9 @@ int main(int argc, const char **argv) {
 								field_usage.ast_context_ptr);
 						}
 					}
+					coop::logger::out("adding freelist pointr to class definition");
 					coop::logger::out("Reordering hot data");
 					coop::src_mod::reorder_hot_data(&cpr);
-
-					//give the record a reference to an instance of this new cold_data_struct
-					coop::logger::out("adding freelist pointr to class definition");
-					coop::src_mod::add_cpr_ref_to(&cpr);
-
-					//modifying/creating the record's important cops/move operators
-					//coop::logger::out("modifying/creating operators");
-					//coop::src_mod::handle_operators(&cpr);
 
 					//modify/create the record's constructors
 					coop::logger::out("modifying constructors");
@@ -872,10 +900,6 @@ int main(int argc, const char **argv) {
 					coop::logger::out("injecting cold struct definitions");
 					coop::src_mod::inject_cold_struct(&cpr);
 					
-					//modify/create the record's destructor, to handle free-list fragmentation
-					//coop::logger::out("modifying/creating destructor");
-					//coop::src_mod::handle_free_list_fragmentation(&cpr);
-
 					//if this record is instantiated on the heap by using new anywhere, we
 					//should make sure, that the single instances are NOT distributed in memory but rather be allocated with spatial locality
 					coop::logger::out("changing 'new' usage");

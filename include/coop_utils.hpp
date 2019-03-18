@@ -64,6 +64,9 @@ namespace coop{
     size_t get_sizeof_in_bits(const FieldDecl* field);
     //will return the sizeof value for a field in Byte
     size_t get_sizeof_in_byte(const FieldDecl* field);
+    //will return the alignment requirement of a field
+    size_t get_alignment_of(const FieldDecl* field);
+
 
     //will return the value of an environmentvariable - or "" 
     std::string getEnvVar( std::string const &);
@@ -244,10 +247,17 @@ struct SGroup
     unsigned int start_idx = 0, end_idx = 0;
     unsigned int type_size = 0;
     float highest_field_weight = 0;
+
     //this field will hold the information to what extend the program would benefit from 
     //splitting the original record starting with this very group
     //The final split will be made at the group with the highest split-value if positive
     double split_value = -1;
+
+    //will remember the hot data size (including padding) if a split is beneficial at this group
+    //this way we can later quickly determine how many additional fields, we can fit in otherwise 
+    //wasted space for padding
+    size_t size_with_padding_for_split_here = -1;
+
     SGroup *next = nullptr, *prev=nullptr;
 };
 
@@ -255,7 +265,7 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
 
 //determine the size of a set of groups regarding structure padding
 //until -> inclusive
-size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, size_t additional_field_size = 0);
+size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, std::vector<size_t> additional_alignments = {}, std::vector<const clang::FieldDecl*> additional_fields = {});
 size_t determine_size_with_padding(const clang::CXXRecordDecl *rec_decl);
 }//namespace coop
 
