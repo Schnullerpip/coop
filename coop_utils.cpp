@@ -277,7 +277,6 @@ size_t determine_size_with_optimal_padding(SGroup *begin, SGroup *until, size_t 
         for(auto &w_s : p->weights_and_sizes)
         {
             //consider that alignment, might diverge from size (array types)
-            size_t size = w_s.size_in_byte;
             size_t alignment = w_s.alignment_requirement;
             alignments.push_back(alignment);
             sum += w_s.size_in_byte;

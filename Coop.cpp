@@ -596,7 +596,7 @@ int main(int argc, const char **argv) {
 					coop::logger::out();
 					coop::logger::log_stream << "hot data without " << p->get_string()<< ": " << Si_prev;
 					coop::logger::out();
-					coop::logger::log_stream << "cold without " << p->get_string()<<": " << Si_n;
+					coop::logger::log_stream << "cold with " << p->get_string()<<": " << Si_n;
 					coop::logger::out()--;
 
 					//first requirement -> either reduce number cachelines or number elements per cache-line (or both of course - we love both)
@@ -646,6 +646,8 @@ int main(int argc, const char **argv) {
 				coop::logger::log_stream << "W [In use]: " << (found_split ? p->highest_field_weight : -1);
 				coop::logger::out();
 				coop::logger::log_stream << "avg: " << average;
+				coop::logger::out();
+				coop::logger::log_stream << "tolerant avg: " << tolerant_average;
 				coop::logger::out();
 				coop::logger::log_stream << "1-avg: " << one_minus_avg;
 				coop::logger::out();

@@ -4,7 +4,6 @@ EXTERNFREE_LIST_NAME FREE_LIST_INSTANCE_HOT;
 
 struct STRUCT_NAME {
 	STRUCT_FIELDS
-	STRUCT_NAME():FIELD_INITIALIZERS{}
 
 	struct deep_cpy_ptr {
 		deep_cpy_ptr(){}

@@ -203,43 +203,44 @@ namespace coop{
                 std::stringstream constructors;
                 for(auto field : cpr->rec_info->cold_fields){
 
-                    bool is_array_type = field->getType().getTypePtr()->isArrayType();
-                    //ss << get_text(field, &field->getASTContext());
-                    auto type = field->getType();
-                    type.removeLocalConst();
-                    if(is_array_type)
-                    {
-                        char buff[1024];
-                        const char *type_begin = type.getAsString().c_str();
-                        const char *arr_begin = coop::naming::get_from_start_until(type_begin, '[')-1;
-                        buff[arr_begin-type_begin] = '\0';
-                        memcpy(buff, type_begin, arr_begin - type_begin);
-                        coop::logger::log_stream << type_begin << "->'" << buff << "'";
-                        coop::logger::out();
-                        coop::logger::log_stream << arr_begin;
-                        coop::logger::out();
-                        ss << buff << " " << field->getNameAsString() << (arr_begin-1) << ";\n";
-                    }else{
-                        ss << type.getAsString() << " " << field->getNameAsString() << ";\n";
-                    }
+                    //bool is_array_type = field->getType().getTypePtr()->isArrayType();
+                    ////ss << get_text(field, &field->getASTContext());
+                    //auto type = field->getType();
+                    //type.removeLocalConst();
+                    //if(is_array_type)
+                    //{
+                    //    char buff[1024];
+                    //    const char *type_begin = type.getAsString().c_str();
+                    //    const char *arr_begin = coop::naming::get_from_start_until(type_begin, '[')-1;
+                    //    buff[arr_begin-type_begin] = '\0';
+                    //    memcpy(buff, type_begin, arr_begin - type_begin);
+                    //    coop::logger::log_stream << type_begin << "->'" << buff << "'";
+                    //    coop::logger::out();
+                    //    coop::logger::log_stream << arr_begin;
+                    //    coop::logger::out();
+                    //    ss << buff << " " << field->getNameAsString() << (arr_begin-1) << ";\n";
+                    //}else{
+                    //    ss << type.getAsString() << " " << field->getNameAsString() << ";\n";
+                    //}
                     //if(*cpr->rec_info->cold_fields.end() != field){
                     //    ss << ";\n";
                     //}
 
-                    if(field->hasInClassInitializer()){
-                        in_class_initialized_fields.push_back(field);
-                    }
+                    //if(field->hasInClassInitializer()){
+                    //    in_class_initialized_fields.push_back(field);
+                    //}
+                    ss << get_text(field, &field->getASTContext()) << ";\n";
                 }
 
-                for(size_t i = 0; i < in_class_initialized_fields.size(); ++i){
-                    const FieldDecl *field = in_class_initialized_fields[i];
-                    constructors << field->getNameAsString() << "("
-                        << coop::naming::get_from_end_until(get_text(field->getInClassInitializer(), &field->getASTContext()).c_str(), '=') << ")";
-                    if(i < in_class_initialized_fields.size()-1){
-                        constructors << ", ";
-                    }
-                }
-                replaceAll(tmpl_file_content, FIELD_INITIALIZERS, constructors.str());
+                //for(size_t i = 0; i < in_class_initialized_fields.size(); ++i){
+                //    const FieldDecl *field = in_class_initialized_fields[i];
+                //    constructors << field->getNameAsString() << "("
+                //        << coop::naming::get_from_end_until(get_text(field->getInClassInitializer(), &field->getASTContext()).c_str(), '=') << ")";
+                //    if(i < in_class_initialized_fields.size()-1){
+                //        constructors << ", ";
+                //    }
+                //}
+                //replaceAll(tmpl_file_content, FIELD_INITIALIZERS, constructors.str());
 
                 //for(auto ctor : cpr->const_ctors)
                 //{
