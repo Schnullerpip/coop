@@ -77,8 +77,8 @@ int coop::record::record_info::isRelevantField(const MemberExpr* memExpr){
 }
 
 void coop::record::record_info::print_func_mem_mat(std::map<const FunctionDecl*, int> & mapping_reference){
-    std::function<const char* (const FunctionDecl*)> getNam =
-        [](const FunctionDecl* fd){ return fd->getNameAsString().c_str();};
+    std::function<std::string (const FunctionDecl*)> getNam =
+        [](const FunctionDecl* fd){ return fd->getNameAsString();};
 
     std::function<int (const FunctionDecl*)> getIdx =
         [&mapping_reference](const FunctionDecl* fd){
@@ -90,13 +90,13 @@ void coop::record::record_info::print_loop_mem_mat(
                 std::map<const Stmt*, coop::loop_credentials> &loop_reference,
                 std::map<const Stmt*, int> &loop_idx_mapping_reference){
 
-    std::function<const char* (const Stmt*)> getNam = [&loop_reference](const Stmt* ls){ 
+    std::function<std::string (const Stmt*)> getNam = [&loop_reference](const Stmt* ls){ 
 
         auto loop_iter = loop_reference.find(ls);
         if(loop_iter != loop_reference.end()){
-            return loop_iter->second.identifier.c_str();
+            return loop_iter->second.identifier;
         }
-        return "unidentified loop -> this is most likely a bug!";
+        return std::string("unidentified loop -> this is most likely a bug!");
     };
 
     std::function<int (const Stmt*)> getIdx = [&loop_idx_mapping_reference](const Stmt* ls){

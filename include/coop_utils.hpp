@@ -189,7 +189,7 @@ namespace coop{
         private:
             template<typename T, typename P>
             void print_mat (data_matrix<T, P>* mat,
-                std::function<const char* (const T*)>& getName,
+                std::function<std::string (const T*)>& getName,
                 std::function<int (const T*)>& getIdx){
                 coop::logger::depth++;
                 for(auto f : fields){

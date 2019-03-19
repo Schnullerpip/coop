@@ -454,30 +454,6 @@ int main(int argc, const char **argv) {
 
 				float average = 0;
 
-				//check the functions - if there is a recursive function, make sure to add its members' field weights to the average
-				//for(auto func_mems : *rec.relevant_functions)
-				//{
-				//	const FunctionDecl *func = func_mems.first;
-				//	//get node
-				//	auto function_node = coop::AST_abbreviation::function_nodes.find(func)->second;
-				//	if(!function_node->recursive_calls.empty())
-				//	{
-				//		//get fnc_idx
-				//		int function_idx = coop::FunctionRegistrationCallback::function_idx_mapping[func];
-				//		auto mems = func_mems.second;
-				//		for(auto mem : mems)
-				//		{
-				//			int mem_idx = rec.isRelevantField(mem);
-				//			if(mem_idx >= 0)
-				//			{
-				//				float weight = rec.fun_mem.at(mem_idx, function_idx);
-				//				rec.field_weights[mem_idx].second += weight;
-				//				average += weight;
-				//			}
-				//		}
-				//	}
-				//}
-
 				//each record may have several fields - iterate them
 				int num_fields = rec.field_idx_mapping.size();
 				float max = 0;
@@ -579,8 +555,8 @@ int main(int argc, const char **argv) {
 				p=significance_groups->next; //splitting makes only sence from the 2nd group (we dont want to split everything...)
 				if(p){
 				do{
-					//coop::logger::log_stream << "Considering split at " << p->get_string();
-					//coop::logger::out()++;
+					coop::logger::log_stream << "Considering split at " << p->get_string();
+					coop::logger::out()++;
 
 					//Sizes S of assembled groups indices symbolize group range -> e.g. S0_i = size of groups from group 0 to group i (current p)
 					size_t S0_i = coop::determine_size_with_optimal_padding(significance_groups, p, {sizeof(void*)});
@@ -596,18 +572,27 @@ int main(int argc, const char **argv) {
 					bool reduces_elements_per_cache_line = ((record_size < CLS) && (std::floor(elements_per_cache_line_without) > std::floor(elements_per_cache_line_with)));
 					bool reduces_cache_lines_per_element = ((record_size > CLS) && (std::ceil(cache_lines_per_element_without) < std::ceil(cache_lines_per_element_with)));
 
-					//coop::logger::out("Size:")++;
-					//coop::logger::log_stream << "hot data with " << p->get_string()<< ": " << S0_i;
-					//coop::logger::out();
-					//coop::logger::log_stream << "hot data without " << p->get_string()<< ": " << S0_prev;
-					//coop::logger::out();
-					//coop::logger::log_stream << "cold with " << p->get_string()<<": " << Si_n;
-					//coop::logger::out()--;
+					coop::logger::out("Size:")++;
+					coop::logger::log_stream << "hot data with " << p->get_string()<< ": " << S0_i;
+					coop::logger::out();
+					coop::logger::log_stream << "hot data without " << p->get_string()<< ": " << S0_prev;
+					coop::logger::out();
+					coop::logger::log_stream << "cold with " << p->get_string()<<": " << Si_n;
+					coop::logger::out()--;
 
-					//coop::logger::log_stream << "reduces elems per cache-line: " << (reduces_elements_per_cache_line ? "yes" : "no");
-					//coop::logger::out();
-					//coop::logger::log_stream << "reduces cache-lines per elem: " << (reduces_cache_lines_per_element ? "yes" : "no");
-					//coop::logger::out();
+					coop::logger::log_stream << "reduces elems per cache-line: " << (reduces_elements_per_cache_line ? "yes" : "no");
+					coop::logger::out();
+					coop::logger::log_stream << "reduces cache-lines per elem: " << (reduces_cache_lines_per_element ? "yes" : "no");
+					coop::logger::out();
+
+					coop::logger::log_stream << sum_max_k << " * " << "(" << Si_n << " - " << sizeof(void*) << ")/" << CLS << " = " << sum_max_k * (static_cast<double>(Si_n) - sizeof(void*))/CLS;
+					coop::logger::out();
+					coop::logger::log_stream << "(" << sum_max_field_weight << " - " << sum_max_k << ") * (1 + " << Si_n << ")/ " << CLS << " = " << (sum_max_field_weight - sum_max_k) * (1 + static_cast<double>(Si_n))/CLS;
+					coop::logger::out();
+
+					coop::logger::log_stream << "split_value: " << (sum_max_k * (static_cast<double>(Si_n) - sizeof(void*))/CLS) - ((sum_max_field_weight - sum_max_k) * (1 + static_cast<double>(Si_n))/CLS);
+					coop::logger::out();
+
 					if(reduces_cache_lines_per_element || reduces_elements_per_cache_line){
 						//check whether the cost/benefit ratio is good
 						//variable names refer to formula in thesis (si = savings for group i split; oi = overhead for group i split)
@@ -624,7 +609,7 @@ int main(int argc, const char **argv) {
 					}
 
 					sum_max_k += p->highest_field_weight;
-					//coop::logger::depth--;
+					coop::logger::depth--;
 				} while((p=p->next));
 				}
 				//--------------------------significance ordering
@@ -689,15 +674,14 @@ int main(int argc, const char **argv) {
 							//coop::logger::log_stream << "cpe_o: " << cache_lines_per_hot_instance << " <= " << "cpe_n: " << new_cache_lines_per_hot_instance;
 							//coop::logger::out();
 
-							if( (new_hot_instances_per_cache_line <= hot_instances_per_cache_line) || 
-								(new_cache_lines_per_hot_instance >= cache_lines_per_hot_instance))
+							if(!((hot_instances_per_cache_line > new_hot_instances_per_cache_line) ||
+								 (new_cache_lines_per_hot_instance > cache_lines_per_hot_instance)))
 							{
 								rec.hot_fields.push_back(f_w.first);
 								cold_fillers.push_back(f_w.first);
 								coop::logger::log_stream << "[filled]\t";
 								padding -= size_required;
 							}else{
-								coop::logger::out("but padding ruins it...");
 								rec.cold_fields.push_back(f_w.first);
 								coop::logger::log_stream << "[cold]\t" ;
 							}
@@ -1027,7 +1011,6 @@ int main(int argc, const char **argv) {
 
 void create_member_matrices( coop::record::record_info *record_stats)
 {
-
 	int rec_count = 0;
 	for(auto class_fields_map : coop::MemberRegistrationCallback::class_fields_map){
 
@@ -1247,16 +1230,17 @@ void fill_function_member_matrix(
 				value_decls.insert(mem->getMemberDecl());
 			}
 
-			coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
-				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
+			//coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
+			//	<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
 			if(std::find(fields->begin(), fields->end(), field_ptr)!=fields->end() && field_ptr->getParent() == rec_ref.record){
-				coop::logger::log_stream << "' - yes";
+				//coop::logger::log_stream << "' - yes";
 				rec_ref.fun_mem.at(rec_ref.field_idx_mapping[field_ptr], func_idx)++;
-			}else{
-				coop::logger::log_stream << "' - no";
 			}
-			coop::logger::out();
+			//else{
+			//	coop::logger::log_stream << "' - no";
+			//}
+			//coop::logger::out();
 		}
 	}
 }
@@ -1302,16 +1286,16 @@ void fill_loop_member_matrix(
 				value_decls.insert(mem->getMemberDecl());
 			}
 
-			coop::logger::log_stream << "checking loop " << loop_info->identifier << " has member '"
-				<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
+			//coop::logger::log_stream << "checking loop " << loop_info->identifier << " has member '"
+			//	<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
 
 			if(std::find(fields->begin(), fields->end(), field_ptr)!=fields->end() && field_ptr->getParent() == rec_ref.record){
-				coop::logger::log_stream << "' - yes";
+				//coop::logger::log_stream << "' - yes";
 				rec_ref.loop_mem.at(rec_ref.field_idx_mapping[field_ptr], loop_idx)++;
 			}else{
-				coop::logger::log_stream << "' - no";
+				//coop::logger::log_stream << "' - no";
 			}
-			coop::logger::out();
+			//coop::logger::out();
 		}
 	}
 }
