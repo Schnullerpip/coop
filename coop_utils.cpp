@@ -151,7 +151,7 @@ void SGroup::print(bool recursive)
 }
 
 
-SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements){
+SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements, SGroup ** low_groups){
     //coop::logger::log_stream << "x = {";
     //for(unsigned int i = offset; i < offset+number_elements; ++i)
     //{
@@ -185,6 +185,11 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
     float spike_bound_top = median+IQR/2+IQR;
     float spike_bound_bottom = median-IQR/2-IQR;
 
+    coop::logger::log_stream << "upper spike bound: " << spike_bound_top;
+    coop::logger::out();
+    coop::logger::log_stream << "lower spike bound: " << spike_bound_bottom;
+    coop::logger::out();
+
     //determine whether we need another recursion (if not all elements can be found inside our tolerance range)
     //for each significance range (over top bound, inside top/bottom bounds, under bottom bounds) invoke tha routine another time.
     //the elements are sorted in a descending order, so we iterate from start to beginning checking for annomalies.
@@ -204,6 +209,7 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
             over_top = find_significance_groups(x, 0, i);
             mid_values_start_idx = i;
         }
+        
 
         if(x[i].weight < spike_bound_bottom){
             //we found the border that separates the 'normal' data from the low spikes
@@ -262,6 +268,11 @@ SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offs
 
     //if there were values exceeding the lower bounds -> they have been made a group on their own. connect them to this mid segment
     last->next = under_bottom;
+    //also in this case, this groups will most certainly be the only possible split candidates
+    //tell the user, that only these groups should be considered for a split (if he wants to know/has proided an out parameter)
+    if(low_groups){
+        *low_groups = under_bottom;
+    }
 
     if(over_top){
         return over_top;

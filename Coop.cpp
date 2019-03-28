@@ -23,8 +23,6 @@ using namespace llvm;
 using namespace clang;
 using namespace clang::ast_matchers;
 
-#define coop_default_cold_data_allocation_size_i 1024
-#define coop_default_hot_data_allocation_size_i 1024
 #define coop_hot_split_tolerance_f .17f
 #define coop_field_weight_depth_factor_f 10.f
 
@@ -87,6 +85,12 @@ int main(int argc, const char **argv) {
 			coop::input::register_parametered_config("split-tolerance", split_tolerance_action);
 		}
 
+		bool pool_hot_instances_default = false;
+		coop::input::register_parameterless_config("pool-hot-data", [&pool_hot_instances_default](){
+			pool_hot_instances_default = true;
+			coop::logger::out("[Config]::coop will pool hot data");
+			});
+
 		bool apply_changes_to_source_files = true;
 		coop::input::register_parameterless_config("analyze-only", [&apply_changes_to_source_files](){
 			apply_changes_to_source_files = false;
@@ -116,14 +120,14 @@ int main(int argc, const char **argv) {
 			coop::logger::depth--;
 		});
 
-		size_t number_hot_data_elements = coop_default_hot_data_allocation_size_i;
+		size_t number_hot_data_elements = 0;
 		coop::input::register_parametered_config("hot-elements", [&number_hot_data_elements](std::vector<std::string> args){
 			number_hot_data_elements = atoi(args[0].c_str());
 			coop::logger::log_stream << "[Config]::default hot data elements number is set to: " << number_hot_data_elements;
 			coop::logger::out();
 		});
 
-		size_t number_cold_data_elements = coop_default_cold_data_allocation_size_i;
+		size_t number_cold_data_elements = 0;
 		coop::input::register_parametered_config("cold-elements", [&number_cold_data_elements](std::vector<std::string> args){
 			number_cold_data_elements = atoi(args[0].c_str());
 			coop::logger::log_stream << "[Config]::default cold data elements number is set to: " << number_cold_data_elements;
@@ -520,7 +524,9 @@ int main(int argc, const char **argv) {
 
 				coop::logger::out("Significance groups:");
 				coop::logger::depth++;
-				coop::SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size());
+
+				coop::SGroup *low_groups = nullptr;
+				coop::SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size(), &low_groups);
 
 				significance_groups->print(true);
 				coop::logger::depth--;
@@ -551,8 +557,15 @@ int main(int argc, const char **argv) {
 				//now apply the heuristic to the groups to find a possible split
 				size_t CLS = l1.line_size;
 				float sum_max_k = significance_groups->highest_field_weight;
-				coop::SGroup *sgroup_with_highest_split_value = nullptr;
 				p=significance_groups->next; //splitting makes only sence from the 2nd group (we dont want to split everything...)
+
+				//if there were group/s under the low_spike threshold make sure to only consider them for the split
+				if(p && low_groups){
+					for(;p!=low_groups;p=p->next)
+						sum_max_k += p->highest_field_weight;
+				}
+
+				coop::SGroup *sgroup_with_highest_split_value = nullptr;
 				if(p){
 				do{
 					coop::logger::log_stream << "Considering split at " << p->get_string();
@@ -597,7 +610,7 @@ int main(int argc, const char **argv) {
 						//check whether the cost/benefit ratio is good
 						//variable names refer to formula in thesis (si = savings for group i split; oi = overhead for group i split)
 						double si = sum_max_k * (static_cast<double>(Si_n) - sizeof(void*))/CLS;
-						double oi = (sum_max_field_weight - sum_max_k) * (1 + static_cast<double>(Si_n))/CLS;
+						double oi = (sum_max_field_weight - sum_max_k) * (1 + static_cast<double>(S0_prev))/CLS;
 
 						//remember this groups split value
 						p->split_value = si - oi;
@@ -914,6 +927,18 @@ int main(int argc, const char **argv) {
 
 					//since we made a split in this record - we need to define the freelist instances coming with it for each TU
 					//if the record was defined in a cpp file - there is no need for that tho
+					if(number_hot_data_elements == 0){
+						std::string input;
+						coop::logger::out("Please specify the number of hot instances presumed: ");
+						if(!getline(std::cin, input)) { coop::logger::out("cant process input"); }
+						else { number_hot_data_elements = atoi(input.c_str()); }
+					}
+					if(number_cold_data_elements == 0){
+						std::string input;
+						coop::logger::out("Please specify the number of cold instances presumed: (should be higher than hot due to deep copy emulation)");
+						if(!getline(std::cin, input)) { coop::logger::out("cant process input"); }
+						else { number_cold_data_elements = atoi(input.c_str()); }
+					}
 					if(cpr.is_header_file){
 						coop::logger::out("defining free list instances");
 						coop::src_mod::define_free_list_instances(

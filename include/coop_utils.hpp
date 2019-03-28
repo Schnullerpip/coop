@@ -261,7 +261,7 @@ struct SGroup
     SGroup *next = nullptr, *prev=nullptr;
 };
 
-SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements);
+SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements, /*out*/ SGroup **low_groups = nullptr);
 
 //determine the size of a set of groups regarding structure padding
 //until -> inclusive
