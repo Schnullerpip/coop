@@ -21,6 +21,8 @@
 #define REINTERPRET_NEXT "REINTERPRET_NEXT"
 #define FREE_PTR_NAME "FREE_PTR_NAME"
 #define FREE_LIST_NAME "FREE_LIST_NAME"
+#define FREE_LIST_NAME_HOT "FREE_LIST_NAME_HOT"
+#define FREE_LIST_NAME_COLD "FREE_LIST_NAME_COLD"
 #define free_list_name_default "coop_free_list"
 #define FREE_LIST_INSTANCE_COLD "FREE_LIST_INSTANCE_COLD"
 #define FREE_LIST_INSTANCE_HOT "FREE_LIST_INSTANCE_HOT"
@@ -182,7 +184,7 @@ namespace coop{
             return signature.str();
         }
 
-        void inject_cold_struct(cold_pod_representation *cpr)
+        void inject_cold_struct(cold_pod_representation *cpr, const bool pool_hot_data)
         {
             std::stringstream ss;
             ss << getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "cold_struct_template.cpp";
@@ -218,12 +220,14 @@ namespace coop{
             replaceAll(tmpl_file_content, RECORD_TYPE, cpr->rec_info->record->isStruct() ? "struct" : "class");
 
             if(cpr->user_include_path.empty()){
-                replaceAll(tmpl_file_content, FREE_LIST_NAME, cpr->free_list_name);
+                replaceAll(tmpl_file_content, FREE_LIST_NAME_HOT, (pool_hot_data ? cpr->free_list_name : ""));
+                replaceAll(tmpl_file_content, FREE_LIST_NAME_COLD, cpr->free_list_name);
             }else{
-                replaceAll(tmpl_file_content, FREE_LIST_NAME, free_list_name_default);
+                replaceAll(tmpl_file_content, FREE_LIST_NAME_HOT, (pool_hot_data ? free_list_name_default : ""));
+                replaceAll(tmpl_file_content, FREE_LIST_NAME_COLD, free_list_name_default);
             }
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, cpr->free_list_instance_name_hot);
+            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, (pool_hot_data ? cpr->free_list_instance_name_hot : ""));
 
             get_rewriter(cpr->rec_info->record->getASTContext())->
                 InsertTextBefore(cpr->rec_info->record->getSourceRange().getBegin(), tmpl_file_content);
@@ -788,10 +792,11 @@ namespace coop{
             size_t allocation_size_cold_data,
             size_t cache_line,
             size_t hot_alignment,
-            size_t cold_alignment)
+            size_t cold_alignment,
+            const bool pool_hot_data)
         {
             std::stringstream ss;
-            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << "free_list_definition.cpp";
+            ss << coop::getEnvVar(COOP_TEMPLATES_PATH_NAME_S) << "/" << (pool_hot_data ? "free_list_definition.cpp" : "free_list_definition_only_cold.cpp");
             std::ifstream ifs(ss.str());
             ss.str("");
             std::string file_content(

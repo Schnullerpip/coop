@@ -1,0 +1,5 @@
+
+//creating memory space for RECORD_NAME's cold data
+constexpr size_t cold_SIZE_VARIABLE = coop::size_plus_alignments(SIZE_COLD, CACHE_LINE_SIZE, coop::MINIMAL_FREELIST_T_SIZE<STRUCT_NAME>());
+char BYTE_DATA[cold_SIZE_VARIABLE];
+FREE_LIST_NAME FREE_LIST_INSTANCE_COLD(BYTE_DATA, BYTE_DATA+cold_SIZE_VARIABLE, COLD_ALIGNMENT, sizeof(STRUCT_NAME));

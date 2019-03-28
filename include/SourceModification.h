@@ -108,7 +108,8 @@ namespace coop {
         );
 
         void inject_cold_struct(
-            cold_pod_representation *cpr
+            cold_pod_representation *cpr,
+            const bool pool_hot_data
         );
 
         void handle_free_list_fragmentation(
@@ -129,9 +130,10 @@ namespace coop {
             std::stringstream &injection_above_main,
             size_t allocation_size_hot_data,
             size_t allocation_size_cold_data,
-            size_t cache_line = 64,
-            size_t hot_alignment = 0,
-            size_t cold_alignment = 0
+            size_t cache_line,
+            size_t hot_alignment,
+            size_t cold_alignment,
+            bool pool_hot_data
         );
 
         //will detect whether the operators exist

@@ -895,12 +895,12 @@ int main(int argc, const char **argv) {
 					coop::src_mod::handle_constructors(&cpr);
 
 					coop::logger::out("injecting cold struct definitions");
-					coop::src_mod::inject_cold_struct(&cpr);
+					coop::src_mod::inject_cold_struct(&cpr, pool_hot_instances_default);
 					
 					//if this record is instantiated on the heap by using new anywhere, we
 					//should make sure, that the single instances are NOT distributed in memory but rather be allocated with spatial locality
-					coop::logger::out("changing 'new' usage");
-					{
+					if(pool_hot_instances_default){
+						coop::logger::out("changing 'new' usage");
 						auto iter = coop::FindInstantiations::instantiations_map.find(rec.record);
 						if(iter != coop::FindInstantiations::instantiations_map.end()){
 							//this record is apparently being instantiated on the heap!
@@ -910,17 +910,17 @@ int main(int argc, const char **argv) {
 								coop::src_mod::handle_new_instantiation(&cpr, expr_contxt);
 							}
 						}
-					}
-					//accordingly there should be calls to the delete operator (hopefully)
-					//if so we also need to modify those code bits, to make sure the free list wont fragment
-					//so whenever an element is deleted -> tell the freelist to make space for new data
-					coop::logger::out("changing 'delete' usage");
-					{
-						auto iter  = coop::FindDeleteCalls::delete_calls_map.find(rec.record);
-						if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
-							auto &deletions = iter->second;
-							for(auto del_contxt : deletions){
-								coop::src_mod::handle_delete_calls(&cpr, del_contxt);
+						//accordingly there should be calls to the delete operator (hopefully)
+						//if so we also need to modify those code bits, to make sure the free list wont fragment
+						//so whenever an element is deleted -> tell the freelist to make space for new data
+						coop::logger::out("changing 'delete' usage");
+						{
+							auto iter  = coop::FindDeleteCalls::delete_calls_map.find(rec.record);
+							if(iter != coop::FindDeleteCalls::delete_calls_map.end()){
+								auto &deletions = iter->second;
+								for(auto del_contxt : deletions){
+									coop::src_mod::handle_delete_calls(&cpr, del_contxt);
+								}
 							}
 						}
 					}
@@ -948,7 +948,8 @@ int main(int argc, const char **argv) {
 							number_cold_data_elements,
 							l1.line_size,
 							l1.line_size,
-							l1.line_size
+							l1.line_size,
+							pool_hot_instances_default
 						);
 					}
 

@@ -15,6 +15,10 @@
 #if this is set coop will not do any changes to the source files - only analyze
 analyze-only
 
+
+#if there are a lot of single instance allocations of hot data you might want to pool them 
+#pool-hot-data
+
 #if set coop will ask for permission on EACH record when trying to optimize it
 #confirm-record-changes
 
