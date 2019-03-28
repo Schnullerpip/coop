@@ -208,7 +208,7 @@ namespace coop{
                 }
             }
 
-            replaceAll(tmpl_file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
+            //replaceAll(tmpl_file_content, EXTERN, (cpr->is_header_file ? "extern " : ""));
 
             replaceAll(tmpl_file_content, STRUCT_NAME, cpr->struct_name);
             replaceAll(tmpl_file_content, STRUCT_FIELDS, ss.str());
@@ -219,15 +219,17 @@ namespace coop{
             replaceAll(tmpl_file_content, RECORD_NAME, cpr->record_name);
             replaceAll(tmpl_file_content, RECORD_TYPE, cpr->rec_info->record->isStruct() ? "struct" : "class");
 
-            if(cpr->user_include_path.empty()){
-                replaceAll(tmpl_file_content, FREE_LIST_NAME_HOT, (pool_hot_data ? cpr->free_list_name : ""));
-                replaceAll(tmpl_file_content, FREE_LIST_NAME_COLD, cpr->free_list_name);
-            }else{
-                replaceAll(tmpl_file_content, FREE_LIST_NAME_HOT, (pool_hot_data ? free_list_name_default : ""));
-                replaceAll(tmpl_file_content, FREE_LIST_NAME_COLD, free_list_name_default);
-            }
             replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_COLD, cpr->free_list_instance_name_cold);
-            replaceAll(tmpl_file_content, FREE_LIST_INSTANCE_HOT, (pool_hot_data ? cpr->free_list_instance_name_hot : ""));
+
+            //include the free list definition so the cold struct knows about it (it might be extern tho)
+            if(!cpr->user_include_path.empty()){
+                ss << std::endl << "extern " << free_list_name_default << " " << cpr->free_list_instance_name_cold << ";" << std::endl;
+                if(pool_hot_data)
+                    ss << "extern " << free_list_name_default << " " << cpr->free_list_instance_name_hot << ";" << std::endl;
+
+                ss << std::endl << tmpl_file_content;
+                tmpl_file_content = ss.str();
+            }
 
             get_rewriter(cpr->rec_info->record->getASTContext())->
                 InsertTextBefore(cpr->rec_info->record->getSourceRange().getBegin(), tmpl_file_content);
