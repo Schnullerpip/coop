@@ -367,36 +367,6 @@ int main(int argc, const char **argv) {
 		Since B is now relevant search for EACH function/loop associating it etc. Recursion needs to be considered and ideally somehow remembered as a priority weighing factor since recursion will act loop-like
 		*/
 
-		//coop::logger::out("ptr_IDs - functions")++;
-		//for(auto &pi : coop::global<FunctionDecl>::ptr_id)
-		//{
-		//	coop::logger::log_stream << pi.ptr << " " << pi.id ;
-		//	coop::logger::out();
-		//}
-		//coop::logger::depth--;
-		//coop::logger::out("ptr_IDs - loops")++;
-		//for(auto &pi : coop::global<Stmt>::ptr_id)
-		//{
-		//	coop::logger::log_stream << pi.ptr << " " << pi.id ;
-		//	coop::logger::out();
-		//}
-		//coop::logger::depth--;
-		//coop::logger::out("fl_nodes - f")++;
-		//for(auto &fn : coop::AST_abbreviation::function_nodes)
-		//{
-		//	coop::logger::log_stream << fn.second->ID();
-		//	coop::logger::out();
-		//}
-		//coop::logger::depth--;
-		//coop::logger::out("fl_nodes - l")++;
-		//for(auto &fl : coop::AST_abbreviation::loop_nodes)
-		//{
-		//	coop::logger::log_stream << fl.second->ID();
-		//	coop::logger::out();
-		//}
-		//coop::logger::depth--;
-
-
 		//traverse the AST_abbreviation to find out wether or not recursive function calls exist and remember them
 		coop::AST_abbreviation::determineRecursion();
 
