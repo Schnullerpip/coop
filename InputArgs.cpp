@@ -24,7 +24,6 @@ namespace coop{
         
         void resolve_config()
         {
-
             //parse the config file - if non existent create one
             std::ifstream config_input;
             config_input.open(config_file_name);

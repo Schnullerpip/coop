@@ -32,8 +32,7 @@ void coop::record::record_info::init(
     std::set<const clang::FieldDecl*> *field_vector,
     std::map<const clang::FunctionDecl*, std::vector<const clang::MemberExpr*>> *rlvnt_funcs,
     std::map<const Stmt*, loop_credentials> *rlvnt_loops)
-    {
-
+{
     record = class_struct;
     fields = *field_vector;
 
@@ -54,7 +53,9 @@ void coop::record::record_info::init(
     }
 }
 
-std::vector<const MemberExpr*>* coop::record::record_info::isRelevantFunction(const clang::FunctionDecl* func){
+std::vector<const MemberExpr*> *
+coop::record::record_info::isRelevantFunction(const clang::FunctionDecl* func)
+{
     auto global = coop::global<FunctionDecl>::get_global(func);
     if(!global)return nullptr;
 
@@ -65,7 +66,8 @@ std::vector<const MemberExpr*>* coop::record::record_info::isRelevantFunction(co
     return nullptr;
 }
 
-int coop::record::record_info::isRelevantField(const MemberExpr* memExpr){
+int coop::record::record_info::isRelevantField(const MemberExpr* memExpr)
+{
     const FieldDecl* field = static_cast<const FieldDecl*>(memExpr->getMemberDecl());
     auto global = coop::global<FieldDecl>::get_global(field);
     if(!global)return -1;
@@ -76,7 +78,8 @@ int coop::record::record_info::isRelevantField(const MemberExpr* memExpr){
     return -1;
 }
 
-void coop::record::record_info::print_func_mem_mat(std::map<const FunctionDecl*, int> & mapping_reference){
+void coop::record::record_info::print_func_mem_mat(std::map<const FunctionDecl*, int> & mapping_reference)
+{
     std::function<std::string (const FunctionDecl*)> getNam =
         [](const FunctionDecl* fd){ return fd->getNameAsString();};
 
@@ -86,10 +89,11 @@ void coop::record::record_info::print_func_mem_mat(std::map<const FunctionDecl*,
     };
     print_mat(&fun_mem, getNam, getIdx);
 }
+
 void coop::record::record_info::print_loop_mem_mat(
                 std::map<const Stmt*, coop::loop_credentials> &loop_reference,
-                std::map<const Stmt*, int> &loop_idx_mapping_reference){
-
+                std::map<const Stmt*, int> &loop_idx_mapping_reference)
+{
     std::function<std::string (const Stmt*)> getNam = [&loop_reference](const Stmt* ls){ 
 
         auto loop_iter = loop_reference.find(ls);
@@ -152,14 +156,6 @@ void SGroup::print(bool recursive)
 
 
 SGroup * find_significance_groups(coop::weight_size *elements, unsigned int offset, unsigned int number_elements, SGroup ** low_groups){
-    //coop::logger::log_stream << "x = {";
-    //for(unsigned int i = offset; i < offset+number_elements; ++i)
-    //{
-    //    coop::logger::log_stream << elements[i].weight << ((i < (offset+number_elements-1)) ? ", " : "");
-    //}
-    //coop::logger::log_stream << "}";
-    //coop::logger::out();
-
 
     if(number_elements < 3){
         //there are not enough field weights to determine a relative significance

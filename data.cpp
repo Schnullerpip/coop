@@ -159,9 +159,6 @@ namespace coop{
 
 void recursiveLeafSearch(coop::fl_node *node, std::vector<coop::fl_node*> node_log)
 {
-    //TODO delete this line! only for debugging
-    if(node == nullptr){coop::logger::out("node pointer is NULL!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1");}
-
     //care for recursion - if we are walking in a circle stop
     if(!node_log.empty() && std::find(node_log.begin(), node_log.end(), node) != node_log.end())
     {

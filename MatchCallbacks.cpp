@@ -126,18 +126,10 @@ void coop::MemberRegistrationCallback::run(const MatchFinder::MatchResult &resul
 
     std::string fileName = result.SourceManager->getFilename(rd->getLocation()).str();
 
-    //coop::logger::log_stream << "found record '" << rd->getNameAsString().c_str() << "' in file: " << coop::naming::get_relevant_token(fileName.c_str());
-    //coop::logger::out();
-
     class_file_map[rd] = fileName;
 
     if(!rd->field_empty()){
         for(auto f : rd->fields()){
-            //coop::logger::log_stream << "found '" << f->getNameAsString()
-            //    << "'(" << coop::get_sizeof_in_bits(f) << " bits) in record '"
-            //    << rd->getNameAsString() << "'";
-            //coop::logger::out();
-
             class_fields_map[rd].insert(coop::global<FieldDecl>::use(f)->ptr);
         }
     }
@@ -192,8 +184,6 @@ void coop::FunctionPrototypeRegistrationCallback::run(const MatchFinder::MatchRe
     //we store the prototypes id with the definitions pointer
     //this way in other TUs that will only be able to find the prototype, they will be able
     //to associate the definition
-    //coop::logger::log_stream << "associating '" << coop::naming::get_decl_id<FunctionDecl>(proto) << "' with: '" << func << "' instead of '" << proto << "'";
-    //coop::logger::out();
 
     //make sure to overwrite an existing global ptr_id for this prototype (could have been found and registered by other callbacks before)
     auto global_f = coop::global<FunctionDecl>::get_global(id);
@@ -212,8 +202,6 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
     const FunctionDecl* func = result.Nodes.getNodeAs<FunctionDecl>(coop_function_s);
     if(!func->isThisDeclarationADefinition()){
         //this is probably just a function header - dont mind it, since this is nothing we want to change
-        //coop::logger::log_stream << "ignored function header: " << coop::naming::get_decl_id<FunctionDecl>(func);
-        //coop::logger::out();
         return;
     }
     auto global_func = coop::global<FunctionDecl>::use(func);
@@ -232,16 +220,10 @@ void coop::FunctionRegistrationCallback::run(const MatchFinder::MatchResult &res
         coop::global<MemberExpr>::set_global(memExpr, id, result.Context);
     }
 
-    //coop::logger::log_stream << "found function declaration '" << func->getCanonicalDecl()->getNameAsString() << "' " << global_func->id << " using member '" << memExpr->getMemberDecl()->getNameAsString() << "'";
-    //coop::logger::out();
-
     if(!coop::FunctionRegistrationCallback::main_function_ptr && func->isMain())
     {
         FunctionRegistrationCallback::main_function_ptr = func;
         FunctionRegistrationCallback::main_file = result.SourceManager->getFilename(main_function_ptr->getLocStart());
-
-        //coop::logger::log_stream << "found main function '" << global_func->id << "' ";
-        //coop::logger::out();
     }
 
 
@@ -445,9 +427,6 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
     Stmt const *loop_stmt;
     bool isForLoop = true;
 
-    //coop::logger::log_stream << "FOUND loop using: " << coop::naming::get_stmt_id<MemberExpr>(member, result.SourceManager);
-    //coop::logger::out();
-
     //prevent redundant memberUsage registration (due to multiple includes of the same h/hpp file)
     static coop::unique member_ids;
     if(member_ids.check(coop::naming::get_stmt_id<MemberExpr>(member, result.SourceManager))){
@@ -460,15 +439,11 @@ void coop::LoopMemberUsageCallback::run(const MatchFinder::MatchResult &result){
         SourceManager &srcMgr = result.Context->getSourceManager();
         loop_stmt = loop;
         loop_name = coop::naming::get_for_loop_identifier(loop, &srcMgr);
-        //coop::logger::log_stream << "found 'for loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
-        //coop::logger::out();
     }else if(const WhileStmt* loop = result.Nodes.getNodeAs<WhileStmt>(coop_loop_s)){
         SourceManager &srcMgr = result.Context->getSourceManager();
         loop_stmt = loop;
         isForLoop = false;
         loop_name = coop::naming::get_while_loop_identifier(loop, &srcMgr);
-        //coop::logger::log_stream << "found 'while loop' " << loop_name << " iterating '" << member->getMemberDecl()->getNameAsString().c_str() << "'";
-        //coop::logger::out();
     }
 
     //make sure to only use the global versions / the unique access points to the nodes
@@ -630,9 +605,6 @@ void coop::FindConstructor::run(const MatchFinder::MatchResult &result){
         auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
         record_decl = global_rec->ptr;
 
-        //coop::logger::log_stream << "found constructor for " << record_decl->getNameAsString() << "\n" << get_text(constructor, result.Context);
-        //coop::logger::out();
-
         //register copy constructors
         if(constructor->isCopyConstructor())
         {
@@ -652,64 +624,5 @@ void coop::FindConstructor::run(const MatchFinder::MatchResult &result){
         //register other constructors
         auto &consts = rec_constructor_map[record_decl];
         consts.push_back(constructor);
-    }
-}
-/*FindCopyAssignmentOperators*/
-void coop::FindCopyAssignmentOperators::add_record(const CXXRecordDecl *rd)
-{
-    records_to_find.push_back(rd);
-}
-void coop::FindCopyAssignmentOperators::run(const MatchFinder::MatchResult &result){
-
-    const CXXMethodDecl *copy_assignment_operator = result.Nodes.getNodeAs<CXXMethodDecl>(coop_function_s);
-
-    if(copy_assignment_operator->isCopyAssignmentOperator()){
-        const CXXRecordDecl *record_decl = copy_assignment_operator->getParent();
-        if(record_decl){
-
-            //make sure to only use global instances 
-            auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
-            record_decl = global_rec->ptr;
-
-            coop::logger::log_stream << "found copy operator for " << record_decl->getNameAsString() << "\n" << get_text(copy_assignment_operator, result.Context);
-            coop::logger::out();
-
-            auto iter = rec_copy_assignment_operator_map.find(record_decl);
-            if(iter == rec_copy_assignment_operator_map.end())
-            {
-                rec_copy_assignment_operator_map[record_decl] = copy_assignment_operator;
-                return;
-            }
-        }
-    }
-}
-
-/*FindMoveAssignmentOperators*/
-void coop::FindMoveAssignmentOperators::add_record(const CXXRecordDecl *rd)
-{
-    records_to_find.push_back(rd);
-}
-void coop::FindMoveAssignmentOperators::run(const MatchFinder::MatchResult &result){
-
-    const CXXMethodDecl *move_assignment_operator = result.Nodes.getNodeAs<CXXMethodDecl>(coop_function_s);
-
-    if(move_assignment_operator->isMoveAssignmentOperator()){
-        const CXXRecordDecl *record_decl = move_assignment_operator->getParent();
-        if(record_decl){
-
-            //make sure to only use global instances 
-            auto global_rec = coop::global<CXXRecordDecl>::use(record_decl);
-            record_decl = global_rec->ptr;
-
-            coop::logger::log_stream << "found move operator for " << record_decl->getNameAsString() << "\n" << get_text(move_assignment_operator, result.Context);
-            coop::logger::out();
-
-            auto iter = rec_move_assignment_operator_map.find(record_decl);
-            if(iter == rec_move_assignment_operator_map.end())
-            {
-                rec_move_assignment_operator_map[record_decl] = move_assignment_operator;
-                return;
-            }
-        }
     }
 }

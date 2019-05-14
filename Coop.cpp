@@ -23,37 +23,9 @@ using namespace llvm;
 using namespace clang;
 using namespace clang::ast_matchers;
 
-#define coop_hot_split_tolerance_f .17f
 #define coop_field_weight_depth_factor_f 10.f
 
 #define coop_free_list_template_file_name "free_list_template.hpp"
-
-// -------------- GENERAL STUFF ----------------------------------------------------------
-// Apply a custom category to all command-line options so that they are the
-// only ones displayed.
-static llvm::cl::OptionCategory MyToolCategory("my-tool options");
-// CommonOptionsParser declares HelpMessage with a description of the common
-// command-line options related to the compilation database and input files.
-// It's nice to have this help message in all tools.
-static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
-// A help message for this specific tool can be added afterwards.
-static cl::extrahelp MoreHelp("\ncoop does stuff! neat!");
-// -------------- GENERAL STUFF ----------------------------------------------------------
-
-void recursive_weighting(
-	coop::record::record_info *rec_ref,
-	coop::fl_node *node
-);
-
-void recursive_weighting(
-	coop::record::record_info *rec_info,
-	const Stmt* child_loop,
-	int depth = 1
-);
-
-void recursive_loop_memberusage_aggregation(
-	const Stmt* parent,
-	const Stmt* child);
 
 void create_member_matrices(
 	coop::record::record_info *record_stats
@@ -75,7 +47,6 @@ coop::system::cache_credentials l1;
 int main(int argc, const char **argv) {
 		//register the tool's options
 		float hot_split_tolerance = .17f;
-
 		{
 			auto split_tolerance_action = [&hot_split_tolerance](std::vector<std::string> args){
 				hot_split_tolerance = atof(args[0].c_str());
@@ -136,7 +107,7 @@ int main(int argc, const char **argv) {
 
 		coop::input::register_parametered_config("depth-factor", [](std::vector<std::string> args){
 			field_weight_depth_factor_g = atof(args[0].c_str());
-			coop::logger::log_stream << "[Config]::default field weifht depth factor is set to: " << field_weight_depth_factor_g;
+			coop::logger::log_stream << "[Config]::default field weight depth factor is set to: " << field_weight_depth_factor_g;
 			coop::logger::out();
 		});
 
@@ -160,7 +131,7 @@ int main(int argc, const char **argv) {
 
 		coop::logger::out("retreiving system information", coop::logger::RUNNING)++;
 
-			l1 = coop::system::get_d_cache_info(coop::system::IDX_0);
+			l1 = coop::system::get_d_cache_info(coop::system::IDX_0);//IDX0 is lvl 1 D cache
 			coop::logger::log_stream
 				<< "cache lvl: " << l1.lvl
 				<< " size: " << l1.size
@@ -229,14 +200,11 @@ int main(int argc, const char **argv) {
 
 		//CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
 		ClangTool Tool(*compilation_database, user_files);
-		//those don't work...
-		//Tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster("-march=x86-64"));
-		Tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster("-m64"));
 
 		//with the user files defined as a match regex we can now initialize the matchers
 		std::string file_match_string = coop::match::get_file_regex_match_condition(((!include_files.empty() || user_include_path_root.empty()) ? nullptr : user_include_path_root.c_str()));
 
-		//create a matcher that filters only the user files - so we dont end up making changes in system headers
+		//create a matcher that filters only the user files - so we dont end up trying to make changes in system headers
 		auto file_match = isExpansionInFileMatching(file_match_string);
 
         DeclarationMatcher classes = cxxRecordDecl(file_match, hasDefinition(), unless(anyOf(isUnion(), isImplicit()))).bind(coop_class_s);
@@ -256,20 +224,10 @@ int main(int argc, const char **argv) {
 												  whileStmt(file_match, has_loop_ancestor).bind(coop_child_while_loop_s));
 		StatementMatcher lf_child_parent = 	stmt(anyOf(forStmt(file_match).bind(coop_child_for_loop_s), whileStmt(file_match).bind(coop_child_while_loop_s)), hasAncestor(functionDecl().bind(coop_parent_s)));
 
-        StatementMatcher nested_loops =
-            eachOf(forStmt(file_match, has_loop_ancestor).bind(coop_child_for_loop_s),
-                  whileStmt(file_match, has_loop_ancestor).bind(coop_child_while_loop_s));
-
         StatementMatcher members_used_in_for_loops = memberExpr(hasAncestor(forStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
         StatementMatcher members_used_in_while_loops = memberExpr(hasAncestor(whileStmt(file_match).bind(coop_loop_s))).bind(coop_member_s);
 
-		//StatementMatcher deleted_instance =
-		//	anyOf(ignoringParenImpCasts(arraySubscriptExpr().bind(coop_array_idx_s)), ignoringParenImpCasts(declRefExpr().bind(coop_class_s)));
-
-       // StatementMatcher delete_calls =
-       //     cxxDeleteExpr(file_match, ignoringParenImpCasts(hasDescendant(deleted_instance))).bind(coop_deletion_s);
-
-	   StatementMatcher delete_calls = cxxDeleteExpr(file_match).bind(coop_deletion_s);
+	    StatementMatcher delete_calls = cxxDeleteExpr(file_match).bind(coop_deletion_s);
 
 
 
@@ -299,7 +257,7 @@ int main(int argc, const char **argv) {
 	coop::logger::log_stream << Format::bold_on << "SYSTEM SETUP" << Format::bold_off;
 	coop::logger::out(coop::logger::DONE);
 
-	coop::logger::log_stream << Format::bold_on << "Data Aggregation" << Format::bold_off << " (parsing AST and invoking callback routines)";
+	coop::logger::log_stream << Format::bold_on << "Data Aggregation" << Format::bold_off << " (parsing ASTs and invoking callback routines)";
 	coop::logger::out(coop::logger::RUNNING)++;
 
 		//generate the ASTs for each compilation unit
@@ -320,7 +278,7 @@ int main(int argc, const char **argv) {
 
 		coop::logger::depth--;
 		coop::logger::depth--;
-	coop::logger::log_stream << Format::bold_on << "Data Aggregation" << Format::bold_off << " (parsing AST and invoking callback routines)";
+	coop::logger::log_stream << Format::bold_on << "Data Aggregation" << Format::bold_off << " (parsing ASTs and invoking callback routines)";
 	coop::logger::out(coop::logger::DONE);
 
 
@@ -348,7 +306,7 @@ int main(int argc, const char **argv) {
 
 
 
-	coop::logger::log_stream << Format::bold_on << "determining logically related fields" << Format::bold_off;
+	coop::logger::log_stream << Format::bold_on << "Determining logically related fields" << Format::bold_off;
 	coop::logger::out(coop::logger::RUNNING)++;
 		const int num_records = member_registration_callback.class_fields_map.size();
 
@@ -356,23 +314,24 @@ int main(int argc, const char **argv) {
 		coop::record::record_info *record_stats =
 			new coop::record::record_info[num_records]();
 
-		coop::logger::out("creating the member matrices", coop::logger::RUNNING)++;
+		coop::logger::out("Creating the member matrices", coop::logger::RUNNING)++;
 
-		/*
-		now we have all functions, using members -> FunctionRegistrationCallback::relevant_functions
+		/* now we have all functions, using members -> FunctionRegistrationCallback::relevant_functions
 		and we also have all loops, using members-> LoopMemberUsageCallback::loops 
 
-		to be nest complete it is not enough to now search for all functions containing the relevant loops and vice versa because this can be nested infinitely/theoretically... 
-		we need to recursively search for higher instances of calls -> e.g. loop A is relevant -> search for EACH function as well as EACH loop associating it -> we find function B
-		Since B is now relevant search for EACH function/loop associating it etc. Recursion needs to be considered and ideally somehow remembered as a priority weighing factor since recursion will act loop-like
-		*/
+		to be nest complete it is not enough to now search for all functions containing the relevant loops and vice versa
+		because this can be nested infinitely/theoretically... 
+		we need to recursively search for higher instances of calls -> e.g. loop A is relevant -> search for EACH function as well as EACH
+		loop associating it -> we find function B Since B is now relevant search for EACH function/loop associating it etc.
+		Recursion needs to be considered and ideally somehow remembered as a priority weighting factor since recursion will act loop-like*/
 
 		//traverse the AST_abbreviation to find out wether or not recursive function calls exist and remember them
 		coop::AST_abbreviation::determineRecursion();
 
-		//reduce the AST abbreviation to the relevant functions/loops
-		//we know which functions/loops are relevant directly -> FunctionRegistrationCallback::relevant_functions LoopMemberUsageCallback::loops
-		//now for each of those relevant entities, we need to iterate over their parents, marking them as relevant too and registering them, so they can be accounted for
+		/*reduce the AST abbreviation to the relevant functions/loops
+		we know which functions/loops are relevant directly -> FunctionRegistrationCallback::relevant_functions LoopMemberUsageCallback::loops
+		now for each of those relevant entities, we need to iterate over their parents,
+		marking them as relevant too and registering them, so they can be accounted for*/
 		coop::AST_abbreviation::reduceASTabbreviation();
 
 		//search for all the leaf nodes
@@ -383,13 +342,6 @@ int main(int argc, const char **argv) {
 		so we also need to consider all the functions, that are being called in a loop, and check, wether or
 		not they use relevant members*/
 		coop::AST_abbreviation::attributeNestedMemberUsages();
-
-		//for debugging - print the ast abbreviation from bottom up
-		//for(auto n : coop::AST_abbreviation::leaf_nodes)
-		//{
-		//	coop::AST_abbreviation::print_parents(n);
-		//}
-
 
 		//determine the loop depth of the nodes
 		//We should now have record_infos with valid information on which members are used by which function/loop
@@ -405,10 +357,10 @@ int main(int argc, const char **argv) {
 		create_member_matrices(record_stats);
 
 		coop::logger::depth--;
-		coop::logger::out("creating the member matrices", coop::logger::DONE)--;
+		coop::logger::out("Creating the member matrices", coop::logger::DONE)--;
 
 	coop::logger::depth--;
-	coop::logger::log_stream << Format::bold_on << "determining logically related fields" << Format::bold_off;
+	coop::logger::log_stream << Format::bold_on << "Determining logically related fields" << Format::bold_off;
 	coop::logger::out(coop::logger::DONE);
 
 	coop::logger::log_stream << Format::bold_on << "Applying Heuristic" << Format::bold_off << " (prioritize pairings)";
@@ -417,7 +369,6 @@ int main(int argc, const char **argv) {
 		//now that we have a matrix for each record, that tells us which of its members are used in which function how many times,
 		//we can take a heuristic and prioritize pairings
 		//by determining which of the members are used most frequently together, we know which ones to make cachefriendly
-		float *record_field_weight_average = new float[num_records]();
 
 		for(int i = 0; i < num_records; ++i){
 			coop::record::record_info &rec = record_stats[i];
@@ -429,7 +380,6 @@ int main(int argc, const char **argv) {
 				float average = 0;
 
 				//each record may have several fields - iterate them
-				int num_fields = rec.field_idx_mapping.size();
 				float max = 0;
 				for(auto fi : rec.field_idx_mapping){
 					int field_idx = fi.second;
@@ -448,30 +398,14 @@ int main(int argc, const char **argv) {
 					}
 					average += accumulated_field_weight;
 				}
-				
 
-				record_field_weight_average[i] = average = average/num_fields;
-
-				/*with the field weight averages (FWAs) we can now narrow down on which members are hot and cold (presumably)
+				/*with the field weights we can now narrow down on which members are hot and cold (presumably)
 				we also now know which fields are logically linked (loop/member matrix)
 					-> which fields show temporal locality
 						-> fields appearing in the same rows are logically linked
 				hot members will stay inside the class definition
 				cold members will be transferred to a struct, that defines those members as part of it and a
-				reference to an instance of said struct will be placed in the original record's definition
-
-				several cases need to be considered:
-					-> one hot field not linked to any other fields -> 'special snowflake'
-						-> should EVERYTHING else be externalized to the cold struct?
-					-> several hot, logically linked field tuples -> this actually shows a lack of cohesion and could/should be communicated as a possible designflaw -> can/should I fix this?
-					-> cold data that has temporal locality to hot data (used in same loop as hot data, but not nearly as often (only possible for nested Loops: loop A nests loop B; A uses cold 'a' B uses hot 'b' and 'c')) -> should a now be considered hot?
-						'a' should probably just be handled locally (LHS - principle) but is this the purpose of this optimization?
-					-> everything is hot/cold -> basically nothing to hot/cold split -> AOSOA should be applied
-					-> 
-				
-				what about weightings in general? Should they only be regarded relatively to each other,
-				or should I declare constant weight levels, that indicate wether or not data is hot/cold?
-				*/
+				reference to an instance of said struct will be placed in the original record's definition*/
 
 				//now determine the record's hot/cold fields
 
@@ -496,7 +430,7 @@ int main(int argc, const char **argv) {
 				coop::logger::depth++;
 
 				coop::SGroup *low_groups = nullptr;
-				coop::SGroup * significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size(), &low_groups);
+				coop::SGroup *significance_groups = coop::find_significance_groups(&weights[0], 0, weights.size(), &low_groups);
 
 				significance_groups->print(true);
 				coop::logger::depth--;
@@ -627,8 +561,6 @@ int main(int argc, const char **argv) {
 						padding = cache_lines_per_hot_instance * CLS - sgroup_with_highest_split_value->size_with_padding_for_split_here;
 					}
 				}
-				//coop::logger::log_stream << "Filler space left: " << padding;
-				//coop::logger::out();
 
 				//the most important fields are the ones in the group, that mark the optimal split point try them
 				coop::logger::out("h/f/c\tname(size)\tfield weight:");
@@ -640,22 +572,15 @@ int main(int argc, const char **argv) {
 						size_t field_size = coop::get_sizeof_in_byte(f_w.first);
 						size_t size_required = field_size*((hot_instances_per_cache_line >= 1) ? hot_instances_per_cache_line : cache_lines_per_hot_instance);
 						if((padding > 0) && (padding > size_required)){
-							//coop::logger::log_stream << "required size for: " << f_w.first->getNameAsString() << " = " << size_required << " (" << padding << " available)";
-							//coop::logger::out();
 							//looking good - but one final test:
 							//the insertion of this cold field could possibly mean arbitrary changes to the records padding.
-							//check whether or not including the cold field will ultimately deteriorate the instance : CLS ratio
+							//check whether or not including the cold field will ultimately deteriorate the 'instance : CLS' ratio
 							std::vector<const clang::FieldDecl *> fillers_plus_this = cold_fillers;
 							fillers_plus_this.push_back(f_w.first);
 							size_t new_size = coop::determine_size_with_optimal_padding(significance_groups, sgroup_with_highest_split_value->prev, {sizeof(void*)}, fillers_plus_this);
 
 							int new_hot_instances_per_cache_line = std::floor(CLS*1.f/new_size);
 							int new_cache_lines_per_hot_instance = std::ceil(new_size*1.f/CLS);
-
-							//coop::logger::log_stream << "epc_o: " << hot_instances_per_cache_line << " >= " << "epc_n: " << new_hot_instances_per_cache_line;
-							//coop::logger::out();
-							//coop::logger::log_stream << "cpe_o: " << cache_lines_per_hot_instance << " <= " << "cpe_n: " << new_cache_lines_per_hot_instance;
-							//coop::logger::out();
 
 							if(!((hot_instances_per_cache_line > new_hot_instances_per_cache_line) ||
 								 (new_cache_lines_per_hot_instance > cache_lines_per_hot_instance)))
@@ -707,18 +632,14 @@ int main(int argc, const char **argv) {
 
 			/*first we need another data aggregation
 				- find all occurances of cold member usages
-				- find the relevant record's destructors
 				- find occurences of splitted classes heap instantiations
 				- find occurences of splitted classes deletions
-				- find splitted classes' constructors/copy constructors/copyAssignmentOperators
 			*/
 
 			MatchFinder finder;
 
 			std::vector<coop::FindDestructor*> destructor_finders;
 			coop::FindConstructor constructor_finder;
-			coop::FindCopyAssignmentOperators copy_assignment_finder;
-			coop::FindMoveAssignmentOperators move_assignment_finder;
 			coop::FindInstantiations instantiation_finder;
 			coop::FindDeleteCalls deletion_finder;
 			coop::AccessSpecCallback access_spec_finder;
@@ -729,8 +650,6 @@ int main(int argc, const char **argv) {
 					instantiation_finder.add_record(rec.record);
 					deletion_finder.add_record(rec.record);
 					constructor_finder.add_record(rec.record);
-					copy_assignment_finder.add_record(rec.record);
-					move_assignment_finder.add_record(rec.record);
 
 					coop::FindDestructor *df = new coop::FindDestructor(rec);
 					destructor_finders.push_back(df);
@@ -747,8 +666,6 @@ int main(int argc, const char **argv) {
 			finder.addMatcher(delete_calls, &deletion_finder);
 			finder.addMatcher(cxxNewExpr(file_match).bind(coop_new_instantiation_s), &instantiation_finder);
 			finder.addMatcher(cxxConstructorDecl(file_match, isDefinition(), unless(isImplicit())).bind(coop_constructor_s), &constructor_finder);
-			finder.addMatcher(cxxMethodDecl(file_match, isDefinition(), isCopyAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &copy_assignment_finder);
-			finder.addMatcher(cxxMethodDecl(file_match, isDefinition(), isMoveAssignmentOperator(), unless(isImplicit())).bind(coop_function_s), &move_assignment_finder);
 
 			//generate a regex matcher, that is able to find member usages (excluding those faulty registrations of records...)
 			std::stringstream member_finder_regex;
@@ -765,7 +682,7 @@ int main(int argc, const char **argv) {
 
 			auto name_matcher = matchesName(member_finder_regex.str());
 
-			coop::logger::out("Second data aggregation - finding cold field usages relevant ctors/dtors/operators", coop::logger::RUNNING)++;
+			coop::logger::out("Second data aggregation - finding cold field usages relevant creation/destruction", coop::logger::RUNNING)++;
 			//apply the matchers to all the ASTs
 			for(unsigned i = 0; i < ASTs.size(); ++i){
 				coop::logger::log_stream << "parsing AST[" << i << "]";
@@ -779,7 +696,7 @@ int main(int argc, const char **argv) {
 				finder.matchAST(ast_context);
 			}
 			coop::logger::depth--;
-			coop::logger::out("Second data aggregation - finding cold field usages relevant ctors/dtors/operators", coop::logger::DONE);
+			coop::logger::out("Second data aggregation - finding cold field usages relevant creation/destruction", coop::logger::DONE);
 			//destroy the destructor finders
 			for(auto df : destructor_finders){
 				delete df;
@@ -793,7 +710,6 @@ int main(int argc, const char **argv) {
 
 			for(int i = 0; i < num_records; ++i){
 				coop::record::record_info &rec = record_stats[i];
-
 
 				//this check indicates wether or not the record has cold fields
 				if(!rec.cold_fields.empty()){
@@ -900,13 +816,13 @@ int main(int argc, const char **argv) {
 					if(number_hot_data_elements == 0){
 						std::string input;
 						coop::logger::out("Please specify the number of hot instances presumed: ");
-						if(!getline(std::cin, input)) { coop::logger::out("cant process input"); }
+						if(!getline(std::cin, input)) { coop::logger::log_stream << "cant process input"; coop::logger::err();}
 						else { number_hot_data_elements = atoi(input.c_str()); }
 					}
 					if(number_cold_data_elements == 0){
 						std::string input;
 						coop::logger::out("Please specify the number of cold instances presumed: (should be higher than hot due to deep copy emulation)");
-						if(!getline(std::cin, input)) { coop::logger::out("cant process input"); }
+						if(!getline(std::cin, input)) { coop::logger::log_stream << "cant process input"; coop::logger::err();}
 						else { number_cold_data_elements = atoi(input.c_str()); }
 					}
 					if(cpr.is_header_file){
@@ -993,17 +909,25 @@ int main(int argc, const char **argv) {
 		{
 			delete ptr_node.second;
 		}
-		delete[] record_field_weight_average;
 		delete[] record_stats;
 	coop::logger::depth--;
 	coop::logger::log_stream << Format::bold_on << "System Cleanup" << Format::bold_off;
 	coop::logger::out(coop::logger::DONE);
 
-
 	return 0;
 }
 
 
+
+
+
+
+
+
+
+
+
+// FUNCTION IMPLEMENTATIONS
 
 void create_member_matrices( coop::record::record_info *record_stats)
 {
@@ -1018,7 +942,7 @@ void create_member_matrices( coop::record::record_info *record_stats)
 		if(!global_rec)
 		{
 			//there is no global record!?...
-			coop::logger::out("found no global for a record, that cant be good... [Coop.cpp::create_member_matrices::~795]");
+			coop::logger::out("found no global for a record, that cant be good... [Coop.cpp::create_member_matrices]");
 			continue;
 		}
 		rec = global_rec->ptr;
@@ -1226,17 +1150,10 @@ void fill_function_member_matrix(
 				value_decls.insert(mem->getMemberDecl());
 			}
 
-			//coop::logger::log_stream << "checking func '" << func->getNameAsString().c_str() << "'\thas member '"
-			//	<< mem->getMemberDecl()->getNameAsString().c_str() << "' for record '" << rec_ref.record->getNameAsString().c_str();
-
 			if(std::find(fields->begin(), fields->end(), field_ptr)!=fields->end() && field_ptr->getParent() == rec_ref.record){
 				//coop::logger::log_stream << "' - yes";
 				rec_ref.fun_mem.at(rec_ref.field_idx_mapping[field_ptr], func_idx)++;
 			}
-			//else{
-			//	coop::logger::log_stream << "' - no";
-			//}
-			//coop::logger::out();
 		}
 	}
 }
